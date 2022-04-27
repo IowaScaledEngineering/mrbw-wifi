@@ -1,4 +1,4 @@
 schematics mrbw-wifi.sch
 output-name ../pcb/mrbw-wifi
 skip-m4
-elements-dir ../../../ise-footprints
+elements-dir ../../ise-footprints
