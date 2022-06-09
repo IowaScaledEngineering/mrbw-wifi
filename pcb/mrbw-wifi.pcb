@@ -811,9 +811,7 @@ Via[1155.00mil 390.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[3215.00mil 1275.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[2305.00mil 1825.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[2905.00mil 1825.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
-Via[1390.00mil 2025.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
-Via[1390.00mil 2065.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
-Via[2845.00mil 2205.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
+Via[2845.00mil 2205.00mil 26.00mil 24.00mil 0.0000 12.00mil "" ""]
 Via[2875.00mil 2235.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 Via[2955.00mil 2155.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 Via[2915.00mil 2155.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
@@ -856,6 +854,7 @@ Via[3060.00mil 300.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[3020.00mil 300.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[301.00mil 619.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 Via[300.00mil 520.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
+Via[1695.00mil 1865.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 
 Element["" "ESP32_S2_SOLO" "U1" "unknown" 2620.00mil 5.00mil -425.00mil 10.00mil 0 100 ""]
 (
@@ -1646,10 +1645,6 @@ Layer(1 "top" "copper")
 )
 Layer(2 "bottom" "copper")
 (
-	Line[1390.00mil 2025.00mil 1390.00mil 2075.00mil 40.00mil 20.00mil "clearline"]
-	Line[1390.00mil 2075.00mil 1470.00mil 2155.00mil 40.00mil 20.00mil "clearline"]
-	Line[1470.00mil 2155.00mil 1570.00mil 2155.00mil 40.00mil 20.00mil "clearline"]
-	Line[1485.00mil 2155.00mil 2955.00mil 2155.00mil 40.00mil 20.00mil "clearline"]
 	Line[2845.00mil 2205.00mil 1465.00mil 2205.00mil 10.00mil 20.00mil "clearline"]
 	Line[1465.00mil 2205.00mil 1325.00mil 2065.00mil 10.00mil 20.00mil "clearline"]
 	Line[1325.00mil 2065.00mil 1090.00mil 2065.00mil 10.00mil 20.00mil "clearline"]
@@ -1710,6 +1705,13 @@ Layer(2 "bottom" "copper")
 	Line[495.00mil 250.00mil 1450.00mil 250.00mil 10.00mil 20.00mil "clearline"]
 	Line[300.00mil 520.00mil 300.00mil 618.00mil 10.00mil 20.00mil "clearline"]
 	Line[300.00mil 618.00mil 301.00mil 619.00mil 10.00mil 20.00mil "clearline"]
+	Line[1695.00mil 1865.00mil 1695.00mil 1975.00mil 25.00mil 20.00mil "clearline"]
+	Line[1695.00mil 1975.00mil 1750.00mil 2030.00mil 25.00mil 20.00mil "clearline"]
+	Line[1750.00mil 2030.00mil 1750.00mil 2155.00mil 25.00mil 20.00mil "clearline"]
+	Line[1750.00mil 2155.00mil 1770.00mil 2175.00mil 25.00mil 20.00mil "clearline"]
+	Line[1770.00mil 2175.00mil 2810.00mil 2175.00mil 25.00mil 20.00mil "clearline"]
+	Line[2810.00mil 2175.00mil 2830.00mil 2155.00mil 25.00mil 20.00mil "clearline"]
+	Line[2830.00mil 2155.00mil 2955.00mil 2155.00mil 25.00mil 20.00mil "clearline"]
 	Polygon("clearpoly")
 	(
 		[20.00mil 1905.00mil] [1535.00mil 1905.00mil] [1535.00mil 2280.00mil] [20.00mil 2280.00mil] 
@@ -1729,6 +1731,10 @@ Layer(2 "bottom" "copper")
 	Polygon("clearpoly")
 	(
 		[1690.00mil 320.00mil] [20.00mil 320.00mil] [20.00mil 1985.00mil] [1690.00mil 1985.00mil] 
+	)
+	Polygon("clearpoly")
+	(
+		[1430.00mil 1940.00mil] [1775.00mil 1940.00mil] [1775.00mil 2260.00mil] [1430.00mil 2260.00mil] 
 	)
 )
 Layer(3 "outline" "outline")
@@ -1925,6 +1931,13 @@ NetList()
 		Connect("U2-2")
 		Connect("U2-4")
 		Connect("U3-2")
+	)
+	Net("+5V" "(unknown)")
+	(
+		Connect("C1-1")
+		Connect("C2-1")
+		Connect("J1-1")
+		Connect("U2-3")
 		Connect("U4-1")
 	)
 	Net("/BOOTLOAD" "(unknown)")
@@ -2053,56 +2066,49 @@ NetList()
 	)
 	Net("unnamed_net3" "(unknown)")
 	(
-		Connect("C1-1")
-		Connect("C2-1")
-		Connect("J1-1")
-		Connect("U2-3")
-	)
-	Net("unnamed_net4" "(unknown)")
-	(
 		Connect("D1-2")
 		Connect("R3-1")
 	)
-	Net("unnamed_net5" "(unknown)")
+	Net("unnamed_net4" "(unknown)")
 	(
 		Connect("J2-1")
 		Connect("U1-11")
 		Connect("U3-3")
 	)
-	Net("unnamed_net6" "(unknown)")
+	Net("unnamed_net5" "(unknown)")
 	(
 		Connect("J2-2")
 		Connect("R6-1")
 		Connect("U1-10")
 		Connect("U3-4")
 	)
-	Net("unnamed_net7" "(unknown)")
+	Net("unnamed_net6" "(unknown)")
 	(
 		Connect("R5-2")
 		Connect("U3-7")
 	)
-	Net("unnamed_net8" "(unknown)")
+	Net("unnamed_net7" "(unknown)")
 	(
 		Connect("U1-8")
 		Connect("U3-24")
 	)
-	Net("unnamed_net9" "(unknown)")
+	Net("unnamed_net8" "(unknown)")
 	(
 		Connect("R4-2")
 		Connect("U3-26")
 	)
-	Net("unnamed_net10" "(unknown)")
+	Net("unnamed_net9" "(unknown)")
 	(
 		Connect("J2-3")
 		Connect("U1-9")
 		Connect("U3-27")
 	)
-	Net("unnamed_net11" "(unknown)")
+	Net("unnamed_net10" "(unknown)")
 	(
 		Connect("D3-2")
 		Connect("R5-1")
 	)
-	Net("unnamed_net12" "(unknown)")
+	Net("unnamed_net11" "(unknown)")
 	(
 		Connect("U1-26")
 		Connect("U4-4")
