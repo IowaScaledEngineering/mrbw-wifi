@@ -824,8 +824,6 @@ Via[170.00mil 365.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[495.00mil 250.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 Via[495.00mil 305.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 Via[495.00mil 345.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
-Via[335.00mil 585.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
-Via[270.00mil 585.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 Via[380.00mil 785.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[2220.00mil 425.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 Via[455.00mil 565.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
@@ -856,6 +854,8 @@ Via[40.9102mm 32.8947mm 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[43.9582mm 32.8947mm 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[3060.00mil 300.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
 Via[3020.00mil 300.00mil 26.00mil 0.0000 0.0000 12.00mil "" ""]
+Via[301.00mil 619.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
+Via[300.00mil 520.00mil 26.00mil 20.00mil 0.0000 12.00mil "" ""]
 
 Element["" "ESP32_S2_SOLO" "U1" "unknown" 2620.00mil 5.00mil -425.00mil 10.00mil 0 100 ""]
 (
@@ -1476,11 +1476,6 @@ Layer(1 "top" "copper")
 	Line[31.3390mm 11.4000mm 1255.00mil 470.00mil 10.00mil 20.00mil "clearline"]
 	Line[1255.00mil 470.00mil 1255.00mil 875.43mil 10.00mil 20.00mil "clearline"]
 	Line[1255.00mil 875.43mil 33.0091mm 920.00mil 10.00mil 20.00mil "clearline"]
-	Line[301.00mil 849.00mil 301.00mil 574.00mil 10.00mil 20.00mil "clearline"]
-	Line[301.00mil 574.00mil 395.00mil 480.00mil 10.00mil 20.00mil "clearline"]
-	Line[228.00mil 837.00mil 228.00mil 632.00mil 10.00mil 20.00mil "clearline"]
-	Line[228.00mil 655.00mil 228.00mil 627.00mil 10.00mil 20.00mil "clearline"]
-	Line[228.00mil 627.00mil 270.00mil 585.00mil 10.00mil 20.00mil "clearline"]
 	Line[460.00mil 445.00mil 460.00mil 460.00mil 10.00mil 20.00mil "clearline"]
 	Line[460.00mil 460.00mil 335.00mil 585.00mil 10.00mil 20.00mil "clearline"]
 	Line[445.00mil 914.00mil 429.00mil 930.00mil 10.00mil 20.00mil "clearline"]
@@ -1493,8 +1488,6 @@ Layer(1 "top" "copper")
 	Line[202.00mil 943.00mil 118.00mil 943.00mil 10.00mil 20.00mil "clearline"]
 	Line[118.00mil 943.00mil 98.00mil 963.00mil 10.00mil 20.00mil "clearline"]
 	Line[98.00mil 963.00mil 98.00mil 1111.00mil 10.00mil 20.00mil "clearline"]
-	Line[230.43mil 520.00mil 315.00mil 520.00mil 10.00mil 20.00mil "clearline"]
-	Line[315.00mil 520.00mil 335.00mil 540.00mil 10.00mil 20.00mil "clearline"]
 	Line[160.00mil 445.00mil 160.00mil 519.57mil 10.00mil 20.00mil "clearline"]
 	Line[160.00mil 519.57mil 159.57mil 520.00mil 10.00mil 20.00mil "clearline"]
 	Line[26.7861mm 26.2781mm 28.9451mm 26.2781mm 10.00mil 20.00mil "clearline"]
@@ -1591,6 +1584,13 @@ Layer(1 "top" "copper")
 	Line[79.2450mm 24.1270mm 3160.00mil 990.00mil 10.00mil 20.00mil "clearline"]
 	Line[3160.00mil 990.00mil 3160.00mil 1225.00mil 10.00mil 20.00mil "clearline"]
 	Line[3160.00mil 1225.00mil 3142.50mil 1242.50mil 10.00mil 20.00mil "clearline"]
+	Line[228.00mil 522.43mil 230.43mil 520.00mil 10.00mil 20.00mil "clearline"]
+	Line[355.00mil 520.00mil 397.50mil 477.50mil 10.00mil 20.00mil "clearline"]
+	Line[301.00mil 831.00mil 301.00mil 619.00mil 10.00mil 20.00mil "clearline"]
+	Line[301.00mil 619.00mil 355.00mil 565.00mil 10.00mil 20.00mil "clearline"]
+	Line[228.00mil 863.00mil 228.00mil 647.00mil 10.00mil 20.00mil "clearline"]
+	Line[228.00mil 647.00mil 365.00mil 510.00mil 10.00mil 20.00mil "clearline"]
+	Line[300.00mil 520.00mil 230.43mil 520.00mil 10.00mil 20.00mil "clearline"]
 	Polygon("clearpoly")
 	(
 		[1585.00mil 1485.00mil] [955.00mil 1485.00mil] [955.00mil 1680.00mil] [1585.00mil 1680.00mil] 
@@ -1662,14 +1662,10 @@ Layer(2 "bottom" "copper")
 	Line[1080.00mil 2090.00mil 1320.00mil 2090.00mil 10.00mil 20.00mil "clearline"]
 	Line[1320.00mil 2090.00mil 1465.00mil 2235.00mil 10.00mil 20.00mil "clearline"]
 	Line[1465.00mil 2235.00mil 2875.00mil 2235.00mil 10.00mil 20.00mil "clearline"]
-	Line[495.00mil 250.00mil 1450.00mil 250.00mil 10.00mil 20.00mil "clearline"]
-	Line[495.00mil 305.00mil 520.00mil 305.00mil 10.00mil 20.00mil "clearline"]
-	Line[520.00mil 305.00mil 555.00mil 270.00mil 10.00mil 20.00mil "clearline"]
 	Line[555.00mil 270.00mil 1450.00mil 270.00mil 10.00mil 20.00mil "clearline"]
 	Line[580.00mil 295.00mil 1220.00mil 295.00mil 10.00mil 20.00mil "clearline"]
 	Line[495.00mil 345.00mil 530.00mil 345.00mil 10.00mil 20.00mil "clearline"]
 	Line[530.00mil 345.00mil 580.00mil 295.00mil 10.00mil 20.00mil "clearline"]
-	Line[270.00mil 585.00mil 335.00mil 585.00mil 10.00mil 20.00mil "clearline"]
 	Line[2220.00mil 425.00mil 2275.00mil 370.00mil 10.00mil 20.00mil "clearline"]
 	Line[455.00mil 725.00mil 455.00mil 455.00mil 10.00mil 20.00mil "clearline"]
 	Line[455.00mil 455.00mil 590.00mil 320.00mil 10.00mil 20.00mil "clearline"]
@@ -1709,6 +1705,11 @@ Layer(2 "bottom" "copper")
 	Line[2275.00mil 270.00mil 2245.00mil 240.00mil 10.00mil 20.00mil "clearline"]
 	Line[2245.00mil 240.00mil 2040.00mil 240.00mil 10.00mil 20.00mil "clearline"]
 	Line[1240.00mil 295.00mil 1210.00mil 295.00mil 10.00mil 20.00mil "clearline"]
+	Line[520.00mil 305.00mil 555.00mil 270.00mil 10.00mil 20.00mil "clearline"]
+	Line[495.00mil 305.00mil 520.00mil 305.00mil 10.00mil 20.00mil "clearline"]
+	Line[495.00mil 250.00mil 1450.00mil 250.00mil 10.00mil 20.00mil "clearline"]
+	Line[300.00mil 520.00mil 300.00mil 618.00mil 10.00mil 20.00mil "clearline"]
+	Line[300.00mil 618.00mil 301.00mil 619.00mil 10.00mil 20.00mil "clearline"]
 	Polygon("clearpoly")
 	(
 		[20.00mil 1905.00mil] [1535.00mil 1905.00mil] [1535.00mil 2280.00mil] [20.00mil 2280.00mil] 
@@ -1779,7 +1780,6 @@ Layer(5 "top silk" "silk")
 	Text[2050.00mil 1625.00mil 0 100 "SW1" "clearline"]
 	Text[2360.00mil 1290.00mil 0 100 "www.iascaled.com" "clearline"]
 	Text[2360.00mil 1090.00mil 0 100 "Iowa Scaled Engineering" "clearline"]
-	Text[2360.00mil 1165.00mil 0 100 "MRBW-WIFI v1.0" "clearline"]
 	Text[2360.00mil 1235.00mil 0 100 "(C) 2022  CC BY-SA" "clearline"]
 	Text[3275.00mil 1080.00mil 0 100 "*" "clearline"]
 	Text[1640.00mil 1015.00mil 0 144 "POWER" "clearline"]
@@ -1787,6 +1787,10 @@ Layer(5 "top silk" "silk")
 	Text[1645.00mil 875.00mil 0 144 "ASSOC" "clearline"]
 	Text[3125.00mil 965.00mil 0 100 "BOOT" "clearline"]
 	Text[3055.00mil 1025.00mil 0 100 "STATUS" "clearline"]
+	Text[2360.00mil 1165.00mil 0 100 "MRBW-WIFI v1.1" "clearline"]
+	Text[1440.00mil 750.00mil 0 100 "+" "clearline"]
+	Text[1440.00mil 890.00mil 0 100 "+" "clearline"]
+	Text[1440.00mil 1030.00mil 0 100 "+" "clearline"]
 	Polygon("clearpoly")
 	(
 		[49.2869mm 34.3639mm] [49.1863mm 1350.20mil] [49.1518mm 34.1820mm] [49.1655mm 34.1020mm] [49.2153mm 1340.10mil] 
@@ -2061,14 +2065,14 @@ NetList()
 	)
 	Net("unnamed_net5" "(unknown)")
 	(
-		Connect("J2-2")
-		Connect("R6-1")
+		Connect("J2-1")
 		Connect("U1-11")
 		Connect("U3-3")
 	)
 	Net("unnamed_net6" "(unknown)")
 	(
-		Connect("J2-1")
+		Connect("J2-2")
+		Connect("R6-1")
 		Connect("U1-10")
 		Connect("U3-4")
 	)
