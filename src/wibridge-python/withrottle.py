@@ -32,29 +32,27 @@ class WiThrottleConnection:
     This class is capable of handling multiple locomotives simultaneously via
     the multithrottle interface and its ability to multiplex throttles."""
 
-  conn = None
-  activeThrottles = { }
-  funcStatus = { }
-  funcUpdated = { }
-  lastUpdate = 0
-  recvData = ""
-  ip = None
-  port = None
-  operatingMode = "JMRI"
-
-  version = ""
-  trackPowerOn = False
-  heartbeatMaxInterval = 10
-  serverName = ""
-  serverID = ""
-  WITHROTTLE_RCV_SZ = 4096
-  socketpool = None
-
   def __init__(self, socketpool):
     """Constructor for the object.  Any internal initialization should occur here."""
     self.socketpool = socketpool
-    
-  def connect(self, ip, port, mode="JMRI"):
+    self.debug = False
+    self.conn = None
+    self.activeThrottles = { }
+    self.funcStatus = { }
+    self.funcUpdated = { }
+    self.lastUpdate = 0
+    self.recvData = ""
+    self.ip = None
+    self.port = None
+    self.operatingMode = "JMRI"
+    self.version = ""
+    self.trackPowerOn = False
+    self.heartbeatMaxInterval = 10
+    self.serverName = ""
+    self.serverID = ""
+
+
+  def connect(self, ip, port, mode="JMRI", conn=None):
     """Since the LNWI only understands a subset of Multithrottle commands, open up a single connection
     to multiplex everything through."""
     if mode == "JMRI":
@@ -68,17 +66,25 @@ class WiThrottleConnection:
     print("%s Connect: Connecting to server [%s] port [%d]" % (self.operatingMode, ip, port))
     self.ip = ip
     self.port = port
-    self.conn = self.socketpool.socket(socketpool.SocketPool.AF_INET, socketpool.SocketPool.SOCK_STREAM)
-    """Set the socket timeout relatively large for the initial connect since they take awhile"""
-    self.conn.settimeout(5)
-    self.conn.connect((self.ip, self.port))
+
+    if conn is not None:
+      self.conn = conn
+      self.conn.settimeout(0)
+    else:
+      self.conn = self.socketpool.socket(socketpool.SocketPool.AF_INET, socketpool.SocketPool.SOCK_STREAM)
+      """Set the socket timeout relatively large for the initial connect since they take awhile"""
+      self.conn.settimeout(5)
+      self.conn.connect((self.ip, self.port))
+      self.conn.settimeout(0)
+
     self.recvData = ""
+
     self.rxtx("NProtoThrottle Bridge\n")
     self.rxtx("HUProtoThrottle Bridge\n")
     self.activeThrottles = { }
     print("%s Connect: complete" % (self.operatingMode))
     """Set the timeout for the socket r/w operations small to prevent blocking too long on receives."""
-    self.conn.settimeout(0.0001)
+    self.conn.settimeout(0)
 
 
   def disconnect(self):
@@ -88,7 +94,8 @@ class WiThrottleConnection:
       try:
         self.rxtx("M%1.1s-*<;>r\n" % (mtID))
       except:
-        print("In disconnect, write fails, socket must be dead")
+        if self.debug:
+          print("In disconnect, write fails, socket must be dead")
         time.sleep(0.1)
 
     try:
@@ -109,26 +116,20 @@ class WiThrottleConnection:
     """Internal shared function for transacting with the WiThrottle server."""
     if cmdStr is not None:
       self.lastUpdate = time.monotonic()
-      print("%s TX: Sending [%s]" % (self.operatingMode, cmdStr[:-1]))
+      if self.debug:
+        print("%s TX: Sending [%s]" % (self.operatingMode, cmdStr[:-1]))
       self.conn.send(str.encode(cmdStr))
-      time.sleep(0.05)
-    recvBuffer = bytearray(256)
-    bytesReceived = 0
+      #time.sleep(0.05)
     try:
+      recvBuffer = bytearray(256)
       bytesReceived = self.conn.recv_into(recvBuffer, len(recvBuffer))
+      if bytesReceived > 0:
+        self.recvData += recvBuffer[0:bytesReceived].decode()
+        self.parseIncomingData()
     except:
-      bytesReceived = 0
       pass
 
-    if bytesReceived > 0:
-      self.recvData += recvBuffer[0:bytesReceived].decode()
 
-#    try:
-#      self.recvData += self.conn.recv(self.WITHROTTLE_RCV_SZ).decode()
-#    except:
-#      print("Receive exception")
-      pass
-    self.parseIncomingData()
 
   def parseIncomingData(self):
     # If there's no carriage returns, we don't have a complete response of any sort yet
@@ -150,7 +151,8 @@ class WiThrottleConnection:
       # No length?  Nothing to do
       if len(resp) == 0:
         continue
-      print(resp)
+      if self.debug:
+        print(resp)
 
       if ('VN' == resp[0:2]):  # Protocol version
         self.version = resp[2:]
@@ -185,7 +187,9 @@ class WiThrottleConnection:
         self.serverID = resp[1:]
 
       elif ('M' == resp[0:1]):  # Some sort of multithrottle response - parse this
-        print("%s RX: Multithrottle update [%s]" % (self.operatingMode, resp))
+        if self.debug:
+          print("%s RX: Multithrottle update [%s]" % (self.operatingMode, resp))
+
         try:
           (throttle,cmd) = resp.split("<;>")
           if throttle[2:3] == 'S':
@@ -202,7 +206,8 @@ class WiThrottleConnection:
               funcNum = int(cmd[2:])
               funcVal = int(cmd[1:2])
               self.funcStatus[throttle[1:2]][funcNum] = funcVal
-              print("%s RX: Cab [%s] set func %d to %d " % (self.operatingMode, throttle[1:2], funcNum, funcVal))
+              if self.debug:
+                print("%s RX: Cab [%s] set func %d to %d " % (self.operatingMode, throttle[1:2], funcNum, funcVal))
               if funcNum == 28:
                 self.funcUpdated[throttle[1:2]] = True
         except:
@@ -235,19 +240,22 @@ class WiThrottleConnection:
     del self.activeThrottles[objID['addr']]
 
   def locomotiveFunctionsGet(self, objID):
-    print("%s locomotiveFunctionsGet(%d)" % (self.operatingMode, objID['locoNum']))
+    if self.debug:
+      print("%s locomotiveFunctionsGet(%d)" % (self.operatingMode, objID['locoNum']))
     throttleLetter = self.activeThrottles[objID['addr']]
     return self.funcStatus[throttleLetter]
          
   def locomotiveEmergencyStop(self, objID):
     """Issues an emergency stop command to a locomotive handle that has been previously acquired with locomotiveObjectGet()."""
-    print("%s locomotiveEmergencyStop(%d)" % (self.operatingMode, objID['locoNum']))
+    if self.debug:
+      print("%s locomotiveEmergencyStop(%d)" % (self.operatingMode, objID['locoNum']))
     self.rxtx("M%1.1sA*<;>X\n" % self.activeThrottles[objID['addr']])
 
   def locomotiveObjectGet(self, locoNum, cabID, isLongAddress=True):
     """Acquires and returns a handle that will be used to control a locomotive address.  This will release
        any locomotive that cabID was previously controlling."""
-    print("%s locomotiveObjectGet(%d, 0x%02X)" % (self.operatingMode, locoNum, cabID))
+    if self.debug:
+      print("%s locomotiveObjectGet(%d, 0x%02X)" % (self.operatingMode, locoNum, cabID))
 
     if cabID not in self.activeThrottles:
       newThrottleLetter = self.getAvailableMultithrottleLetter()
@@ -272,9 +280,10 @@ class WiThrottleConnection:
       self.rxtx(None)
       # Check if we've gotten the function statuses from the command station yet
       if self.funcUpdated[self.activeThrottles[cabID]] is True:
-        print("%s locomotiveObjectGet: Got func status for [%d] from LNWI" % (self.operatingMode, locoNum))
+        if self.debug:
+          print("%s locomotiveObjectGet: Got func status for [%d] from LNWI" % (self.operatingMode, locoNum))
         break
-      time.sleep(0.01)
+      #time.sleep(0.01)
 
     # Turn on track power if it's off for some reason
     if self.trackPowerOn == False:
@@ -290,7 +299,8 @@ class WiThrottleConnection:
     speed = int(speed)
     direction = int(direction)
 
-    print("%s locomotiveSpeedSet(%d): set speed %d %s" % (self.operatingMode, objID['locoNum'], speed, ["FWD","REV"][direction]))
+    if self.debug:
+      print("%s locomotiveSpeedSet(%d): set speed %d %s" % (self.operatingMode, objID['locoNum'], speed, ["FWD","REV"][direction]))
       
     if direction != 0 and direction != 1:
       speed = 0
@@ -328,7 +338,8 @@ class WiThrottleConnection:
     funcNum = int(funcNum)
     funcVal = int(funcVal)
 
-    print("LNWI locomotiveFunctionSet(%d): set func %d to %d" % (objID['locoNum'], funcNum, funcVal))
+    if self.debug:
+      print("LNWI locomotiveFunctionSet(%d): set func %d to %d" % (objID['locoNum'], funcNum, funcVal))
  
     if funcNum == 2:  # 2 is non-latching, all others are latching
        self.rxtx("M%1.1sA*<;>F%d%d\n" % (self.activeThrottles[objID['addr']], funcVal, funcNum))

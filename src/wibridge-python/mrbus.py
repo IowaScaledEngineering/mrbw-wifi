@@ -44,11 +44,22 @@ def mrbusCRC16Update(crc, a):
       
       crc16_h = crc16_h ^ MRBus_CRC16_HighTable[t]
       crc16_l = crc16_l ^ MRBus_CRC16_LowTable[t]
-      
       i = i + 1
       
    return (crc16_h<<8) | crc16_l
 
+def mrbusCRC16Calculate(data):
+   mrbusPktLen = data[2]
+   crc = 0
+   
+   for i in range(0, mrbusPktLen):
+      if i == 3 or i == 4:
+         continue
+      else:
+         a = data[i]
+      crc = mrbusCRC16Update(crc, a)
+      
+   return crc
 
 class mrbus(object):
   def disconnect(self):
@@ -56,61 +67,54 @@ class mrbus(object):
 
   def __init__(self, addr, serialPort):
     self.rxBuffer = []
-    self.rxExcapeNext = 0
-    self.rxProcessing = 0
+    self.rxExcapeNext = False
+    self.rxProcessing = False
     self.addr=addr
     self.pktlst=[]
     self.handlern=0
     self.handlers=[]
-    self.rxLeftovers = []
     self.serial = serialPort
-    self.debug = 0
+    self.debug = False
 
   def getpkt(self):
-    retPacket = None
-    incomingBytes = self.serial.read()
+    rxBuffer = self.rxBuffer
+    rxExcapeNext = self.rxExcapeNext
+    
+  
+    while True:
+      incomingBytes = self.serial.read(1)
+      if incomingBytes is None:
+        break  # No packet to return
 
-    if incomingBytes is not None:
-      incomingBytes = bytes(self.rxLeftovers) + incomingBytes
-    else:
-      incomingBytes = bytes(self.rxLeftovers)
+      # Convert our incoming byte to something useful - an int
+      incomingByte = incomingBytes[0] #int.from_bytes(incomingByte, "big")
 
-    self.rxLeftovers = []
-
-    for incomingByte in incomingBytes:
       if self.debug:
-        print("mrbee got byte [0x%02x]" % (incomingByte))
-
-      # If we have a packet to return, then everything else becomes a leftover
-      if retPacket is not None:
-        self.rxLeftovers.append(incomingByte)
-        continue
+        print("mrbee got byte [0x%02x]" % incomingByte)
 
       if 0x7E == incomingByte:
-        if self.debug:        
+        if self.debug:
           print("mrbee starting new packet")
         self.rxBuffer = [ incomingByte ]
-        self.rxExcapeNext = 0
-        self.rxProcessing = 1 
+        self.rxExcapeNext = False
+        self.rxProcessing = True
         self.rxExpectedPktLen = 255
-        continue
         
       elif 0x7D == incomingByte:
         if self.debug:
           print("mrbee setting escape")
-        self.rxExcapeNext = 1
-        continue
+        self.rxExcapeNext = True
      
       else:
-        if self.rxProcessing == 0:
+        if not self.rxProcessing:
           if self.debug:
-            print("mrbee got byte %02X outside processing, ignoring\n" % incomingByte)
+            print("mrbee got byte %02X outside processing, ignoring\n" % (incomingByte))
           continue
      
-        if self.rxExcapeNext != 0:
+        if self.rxExcapeNext:
           incomingByte = incomingByte ^ 0x20
           self.rxExcapeNext = 0
- 
+
         self.rxBuffer.append(incomingByte)
   
         if len(self.rxBuffer) == 3:
@@ -124,8 +128,10 @@ class mrbus(object):
                              
           if 0xFF != pktChecksum:
             # Error, conintue
-#            print("mrbee - checksum error - checksum is %02X" % (pktChecksum))
-            continue      
+            if self.debug:
+              print("mrbee - checksum error - checksum is %02X" % (pktChecksum))
+
+          pktDataOffset = 0
 
           if 0x80 == self.rxBuffer[3]:
             # 16 bit addressing
@@ -136,20 +142,14 @@ class mrbus(object):
           else:
             # Some other API frame, just dump it
             self.rxBuffer = [ ]
-            self.rxExcapeNext = 0
-            self.rxProcessing = 0
-            continue
+            self.rxExcapeNext = False
+            self.rxProcessing = False
           
-          retPacket = packet(self.rxBuffer[pktDataOffset + 0], self.rxBuffer[pktDataOffset + 1], self.rxBuffer[pktDataOffset + 5], self.rxBuffer[(pktDataOffset + 6):-1])
+          if 0 != pktDataOffset:
+            retPacket = packet(self.rxBuffer[pktDataOffset + 0], self.rxBuffer[pktDataOffset + 1], self.rxBuffer[pktDataOffset + 5], self.rxBuffer[(pktDataOffset + 6):-1])
+            return retPacket
 
-    #if len(self.rxLeftovers) != 0:
-      #data_string = ' '.join(["0x%02X" % (b) for b in self.rxLeftovers])
-      #print("Exiting - leftovers=%d [%s]" % (len(self.rxLeftovers), data_string))
-
-    if retPacket is None:
-      self.rxLeftovers = list(incomingBytes)
-
-    return retPacket
+    return None
 
 
   def sendpkt(self, dest, data, src=None):
@@ -158,26 +158,26 @@ class mrbus(object):
 
      txPktLen = 10 + len(data)   # 5 MRBus overhead, 5 XBee, and the data
 
-     txBuffer = [ ]
-     txBuffer.append(0x7E)       # 0 - Start 
-     txBuffer.append(0x00)       # 1 - Len MSB
-     txBuffer.append(txPktLen)   # 2 - Len LSB
-     txBuffer.append(0x01)       # 3 - API being called - transmit by 16 bit address
-     txBuffer.append(0x00)       # 4 - Frame identifier
-     txBuffer.append(0xFF)       # 5 - MSB of dest address - broadcast 0xFFFF
-     txBuffer.append(0xFF)       # 6 - LSB of dest address - broadcast 0xFFFF
-     txBuffer.append(0x00)       # 7 - Transmit Options
+     txBuffer = [ 0x7E, 0x00, txPktLen, 0x01, 0x00, 0xFF, 0xFF, 0x00, dest, src, len(data) + 5, 0, 0 ] + data
+#     txBuffer.append(0x7E)       # 0 - Start 
+#     txBuffer.append(0x00)       # 1 - Len MSB
+#     txBuffer.append(txPktLen)   # 2 - Len LSB
+#     txBuffer.append(0x01)       # 3 - API being called - transmit by 16 bit address
+#     txBuffer.append(0x00)       # 4 - Frame identifier
+#     txBuffer.append(0xFF)       # 5 - MSB of dest address - broadcast 0xFFFF
+#     txBuffer.append(0xFF)       # 6 - LSB of dest address - broadcast 0xFFFF
+#     txBuffer.append(0x00)       # 7 - Transmit Options
      
-     txBuffer.append(dest)           # 8 / 0 - Destination
-     txBuffer.append(src)            # 9 / 1 - Source
-     txBuffer.append(len(data) + 5)  # 10/ 2 - Length
-     txBuffer.append(0)              # 11/ 3 - CRC High
-     txBuffer.append(0)              # 12/ 4 - CRC Low
+#     txBuffer.append(dest)           # 8 / 0 - Destination
+#     txBuffer.append(src)            # 9 / 1 - Source
+#     txBuffer.append(len(data) + 5)  # 10/ 2 - Length
+#     txBuffer.append(0)              # 11/ 3 - CRC High
+#     txBuffer.append(0)              # 12/ 4 - CRC Low
 
-#     print "MRBee transmitting from %02X to %02X" % (src, dest)
+#     print("MRBee transmitting from %02X to %02X" % (src, dest))
 
-     for b in data:
-        txBuffer.append(int(b) & 0xFF)
+#     for b in data:
+#        txBuffer.append(b & 0xFF)
 
      crc = mrbusCRC16Calculate(txBuffer[8:])
      txBuffer[11] = 0xFF & crc
@@ -200,11 +200,10 @@ class mrbus(object):
         else:
            txBufferEscaped.append(txBuffer[i])
 
-#     print "txBufferEscaped is %d bytes" % (len(txBufferEscaped))
-#     pkt = ""
-#     for i in txBufferEscaped:
-#        pkt = pkt + "%02x " % (i)
-#     print pkt
-     
-     self.serial.write(txBufferEscaped)
+     #print("txBufferEscaped is %d bytes" % (len(txBufferEscaped)))
+     #pkt = ""
+     #for i in txBufferEscaped:
+     #   pkt = pkt + "%02x " % (i)
+     #print(pkt)
+     self.serial.write(bytes(txBufferEscaped))
 

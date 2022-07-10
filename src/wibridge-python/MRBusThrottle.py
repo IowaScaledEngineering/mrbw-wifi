@@ -36,7 +36,7 @@ class MRBusThrottle:
     self.locAddrLong = True
     self.locSpeed = 0
     self.locDirection = 0
-    self.locObjID = 0
+    self.locObjID = None
     self.locEStop = 0
     self.locFunctions = None
     self.throttleAddr = addr
@@ -48,8 +48,9 @@ class MRBusThrottle:
     return self.lastUpdate
    
   def disconnect(self, cmdStn):
-    cmdStn.locomotiveSpeedSet(self.locObjID, 0, 0)
-    cmdStn.locomotiveDisconnect(self.locObjID)
+    if self.locObjID is not None:
+      cmdStn.locomotiveSpeedSet(self.locObjID, 0, 0)
+      cmdStn.locomotiveDisconnect(self.locObjID)
       
    
   def update(self, cmdStn, pkt):
@@ -80,9 +81,14 @@ class MRBusThrottle:
     else:
       direction = 1
 
-    if (addr != self.locAddr):
+    if addr != self.locAddr or self.locObjID is None:
+      try:
+        self.locObjID = cmdStn.locomotiveObjectGet(addr, self.throttleAddr, self.locAddrLong)
+      except:
+        print("MRBusThrottle (0x%02X) - could not acquire locomotive, will retry" % (self.throttleAddr))
+        return
       self.locAddr = addr
-      self.locObjID = cmdStn.locomotiveObjectGet(self.locAddr, self.throttleAddr, self.locAddrLong)
+      self.locFunctions = None  # We changed locomotives, go get new functions
       print("MRBusThrottle (0x%02X): Acquiring new locomotive %d - objID = %s" % (self.throttleAddr, self.locAddr, self.locObjID))
       
     # Only send ESTOP if we just moved into that state
@@ -103,10 +109,11 @@ class MRBusThrottle:
     if self.locFunctions is None:
       try:
         self.locFunctions = cmdStn.locomotiveFunctionsGet(self.locObjID)
-        print("MRBusThrottle (0x%02X): Got loco [%d] functions from cmd station" % (self.throttleAddr, self.locAddr))
+        print("MRBusThrottle (0x%02X): Got loco [%d] functions from cmd station\n  [%s]" % (self.throttleAddr, self.locAddr, self.locFunctions))
         print(self.locFunctions)
       except Exception as e:
         print("MRBusThrottle (0x%02X): Exception in locomotiveFunctionsGet() for loco [%d]" % (self.throttleAddr, self.locAddr))
+        print(e)
         self.locFunctions = [ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ]
          
     functions = [ 0,0,0,0,0,0,0,0,0,0,
