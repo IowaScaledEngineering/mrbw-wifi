@@ -95,7 +95,7 @@ class ESUConnection:
     self.conn = None
     self.recvData = ""
 
-  def rxtx(self, cmdStr=None, timeout=2000):
+  def rxtx(self, cmdStr=None, timeout=1000):
     # No connection?  Can't do much here
     recvBuffer = bytearray(256)
 
@@ -117,16 +117,33 @@ class ESUConnection:
 
     rxStart = supervisor.ticks_ms()
 
-    time.sleep(0.01)
+    if cmdStr is None:
+      try:
+        bytesReceived = self.conn.recv_into(recvBuffer, len(recvBuffer))
+        if bytesReceived > 0:
+          self.recvData += recvBuffer[0:bytesReceived].decode()
+      except OSError as e:
+        if e.args[0] not in [ errno.EAGAIN, errno.ETIMEDOUT ]:
+          raise e
+          print("RXTX: " + str(e))
+      return
 
     while not haveReply and not timedOut:
-      if cmdStr is None or (supervisor.ticks_ms()) > (rxStart + timeout):
+      if (supervisor.ticks_ms()) > (rxStart + timeout):
         timedOut = True
         if self.debug:
           print("ESU RX Timeout")
 
       try:
-        bytesReceived = self.conn.recv_into(recvBuffer, len(recvBuffer))
+        try:
+          bytesReceived = self.conn.recv_into(recvBuffer, len(recvBuffer))
+          
+        except OSError as e:
+          if e.args[0] not in [ errno.EAGAIN, errno.ETIMEDOUT ]:
+            raise e
+            print("RXTX: " + str(e))
+          continue # The "safe" errors
+
         if bytesReceived > 0:
           self.recvData += recvBuffer[0:bytesReceived].decode()
           #print("ESU RX: recvBuffer(%d)=[%s]" % (bytesReceived, recvBuffer[0:bytesReceived].decode()))
@@ -167,7 +184,7 @@ class ESUConnection:
 
       except Exception as e:
         #print(e)
-        time.sleep(0.001)
+        #time.sleep(0.001)
         pass # FIXME - Maybe handle connection errors differently?
 
     
@@ -300,4 +317,8 @@ class ESUConnection:
     """This should be called frequently within the main program loop.  While it doesn't do anything for ESU,
        other command station interfaces have housekeeping work that needs to be done periodically."""
     if time.monotonic() > self.lastUpdate + 10:
-      self.rxtx("get(1, status)")
+      (errCode, errTxt, results) = self.rxtx("get(1, status)")
+      if 0 == errCode:
+        print("ESU: ping successful")
+      else:
+        print("ESU: ping failed")

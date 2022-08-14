@@ -134,7 +134,7 @@ while True:
   # Housekeeping Tasks - Run on a Schedule
   
   # Every second, update the screen
-  if currentTime > lastLoopUpdate + 1:
+  if sysState.forceScreenUpdate or currentTime > lastLoopUpdate + 1:
     sysState.lps = loopCnt / (currentTime - lastLoopUpdate)
     sysState.throttlesConnected = len(throttles)
     lastLoopUpdate = currentTime
@@ -147,6 +147,7 @@ while True:
     screen.status_screen(sysState)
     showTimeDiag = False
     loopCnt = 0
+    sysState.forceScreenUpdate = False
 
   # Send periodic version packets so throttles see us, even if we aren't useful
   if currentTime > lastStatusTime + sysState.statusBroadcastIntervalSeconds:
@@ -174,7 +175,11 @@ while True:
       print("Connecting to [%s] - pass [%s]" % (sysState.networkSSID, sysState.networkPassword))
     
     try:
-      wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
+      if sysState.networkPassword == "":
+        wifi.radio.connect(sysState.networkSSID)
+      else:
+        wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
+#      wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
       pool = socketpool.SocketPool(wifi.radio)
       print("My IP address is", wifi.radio.ipv4_address)
       print("My gateway is", wifi.radio.ipv4_gateway)
@@ -232,6 +237,14 @@ while True:
         sysState.isCmdStnConnected = True
       except Exception as e:
         print(e)
+        try:
+          commandStation.disconnect()
+        except Exception as e:
+          pass
+        
+        # If EHOSTUNREACH or something, we probably don't have a network
+        time.sleep(1)
+        sysState.isWifiConnected = False
         continue
     
     elif sysState.cmdStationType == 'withrottle':
@@ -269,6 +282,8 @@ while True:
     print("Command station update exception: ", e)
     commandStation.disconnect()
     sysState.isCmdStnConnected = False
+    # Write something to the screen here
+    sysState.forceScreenUpdate = True
     continue
 
 
@@ -287,7 +302,20 @@ while True:
         throttles[pkt.src] = MRBusThrottle.MRBusThrottle(pkt.src)
         print("PT-BRIDGE: Adding throttle %02X" % (pkt.src))
 
-      throttles[pkt.src].update(commandStation, pkt)
+      try:
+        throttles[pkt.src].update(commandStation, pkt)
+      except OSError as e:
+        # Probably lost connection, reset command station
+        print("Command station update exception: ", e)
+        commandStation.disconnect()
+        sysState.isCmdStnConnected = False
+        sysState.forceScreenUpdate = True
+        continue
+      except Exception as e:
+        # Non-network exception, don't reset the command station
+        print("Command station update exception, non-network: ", e)
+        continue
+
       if debug:
         print("PT-BRIDGE: Done processing packet from throttle %02X" % (pkt.src))
 

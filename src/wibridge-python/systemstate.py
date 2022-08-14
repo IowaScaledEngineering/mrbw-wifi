@@ -16,7 +16,7 @@ class SystemState:
     self.statusBroadcastIntervalSeconds = 2
     self.isWifiConnected = False
     self.isCmdStnConnected = False
-
+    self.forceScreenUpdate = False
     self.cmdStationIP = None
     self.cmdStationPort = None
 
