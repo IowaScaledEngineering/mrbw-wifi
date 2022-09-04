@@ -126,7 +126,7 @@ class Screen:
     self.writeText(" v1.0 [    ]", 0, 3)
     logoXOffset = 84
 
-    with open("/ise.lgo", 'r') as logo:
+    with open("/ise.lgo", 'rb') as logo:
       w = int.from_bytes(logo.read(1), "big")
       h = int.from_bytes(logo.read(1), "big")
       b = bytearray(logo.read(1 + (w*h // 8)))
