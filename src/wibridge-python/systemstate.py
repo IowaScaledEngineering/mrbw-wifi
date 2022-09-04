@@ -1,5 +1,4 @@
 import re
-import json
 import wifi
 
 class SystemState:
@@ -86,48 +85,66 @@ class SystemState:
 
   def readConfigurationFile(self, filename):
     print("reading file %s" % (filename))
+    jsConf = { }
 
     try:
       with open(filename, 'r') as fp:
-        try:
-          jsConf = json.loads(fp.read())
-          for key in jsConf.keys():
-            if key == 'ssid' and len(jsConf['ssid'].strip()) != 0:
-              self.isAutoNetwork = False
-              self.networkSSID = jsConf['ssid']
-
-            elif key == 'password' and len(jsConf['password'].strip()) != 0:
-              self.networkPassword = jsConf['password']
-            
-            elif key == 'mode' and jsConf['mode'] in ['lnwi', 'withrottle', 'esu']:
-              self.cmdStationType = jsConf['mode']
-              if self.cmdStationType == 'lnwi':
-                self.cmdStationPort = 12090
-              elif self.cmdStationType == 'withrottle' and self.cmdStationPort == None:
-                self.cmdStationPort = 12090
-              elif self.cmdStationType == 'esu' and self.cmdStationPort == None:
-                self.cmdStationPort = 15471
-
-            elif key == 'serverPort' and len(jsConf['serverPort'].strip()) != 0:
-              self.cmdStationPort = int(jsConf['serverPort'].strip())
-
-            elif key == 'serverIP' and len(jsConf['serverIP'].strip()) != 0:
-              self.cmdStationIP = jsConf['serverIP'].strip()
-
-
-          # FIXME: If we have a network but we don't have a command station type, force it
-
-
-          # If we get to the end and we don't have an ssid (autonetwork = false), then reset everything
-          if self.isAutoNetwork:
-            self.networkSSID = None
-            self.networkPassword = None
+        for fline in fp:
+          fline = fline.strip()
+          #Ignore empty lines
+          if len(fline) == 0:
+            continue
+          # Ignore comments
+          if fline[0] == '#':
+            continue
+          kv = fline.split('=', 1)
+          if len(kv) < 2:
+            continue
+          key = kv[0].strip()
+          value = kv[1].strip()
           
-          self.configurationValid = True
-        except:
-          self.configurationError = "Syntax Error"
-          self.configurationValid = False
-          return
+          if len(key) == 0 or len(value) == 0:
+            continue
+          jsConf[key] = value
+
+      try:
+        for key in jsConf.keys():
+          if key == 'ssid' and len(jsConf['ssid'].strip()) != 0:
+            self.isAutoNetwork = False
+            self.networkSSID = jsConf['ssid']
+
+          elif key == 'password' and len(jsConf['password'].strip()) != 0:
+            self.networkPassword = jsConf['password']
+          
+          elif key == 'mode' and jsConf['mode'] in ['lnwi', 'withrottle', 'esu']:
+            self.cmdStationType = jsConf['mode']
+            if self.cmdStationType == 'lnwi':
+              self.cmdStationPort = 12090
+            elif self.cmdStationType == 'withrottle' and self.cmdStationPort == None:
+              self.cmdStationPort = 12090
+            elif self.cmdStationType == 'esu' and self.cmdStationPort == None:
+              self.cmdStationPort = 15471
+
+          elif key == 'serverPort' and len(jsConf['serverPort'].strip()) != 0:
+            self.cmdStationPort = int(jsConf['serverPort'].strip())
+
+          elif key == 'serverIP' and len(jsConf['serverIP'].strip()) != 0:
+            self.cmdStationIP = jsConf['serverIP'].strip()
+
+
+        # FIXME: If we have a network but we don't have a command station type, force it
+
+
+        # If we get to the end and we don't have an ssid (autonetwork = false), then reset everything
+        if self.isAutoNetwork:
+          self.networkSSID = None
+          self.networkPassword = None
+        
+        self.configurationValid = True
+      except:
+        self.configurationError = "Syntax Error"
+        self.configurationValid = False
+        return
 
     except Exception as e:
       self.configurationValid = False

@@ -1,4 +1,18 @@
-{
-	"ssid"     : "",
-	"password" : ""
-}
+# This file is a simple key = value configuration file
+# Any line that starts with # is a comment and ignored
+# Any line without a value (right of the equals) is ignored
+
+# If you want to manually configure the wifi network to connect to, please
+# fill in ssid, password (blank if open), and mode
+
+ssid = 
+password =
+
+# Mode is the command station type - can be lnwi, withrottle, or esu
+mode =
+
+
+# If you want to manually configure your server address, do so here
+serverIP =
+serverPort =
+
