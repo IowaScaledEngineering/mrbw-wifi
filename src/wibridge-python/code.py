@@ -221,7 +221,13 @@ while True:
         cmdStationIP = "%s.%s.%s.1" % (o1, o2, o3)
       else:
         # Gotta go scan the subnet
-        (cmdStationIP, openSocket) = serverFind(pool, 0.2, cmdStationPort)
+        result = serverFind(pool, 0.2, cmdStationPort)
+        if result is not None:
+          (cmdStationIP, openSocket) = result
+        else:
+          print("cmdStationIP not found")
+          continue
+
 
     print("cmdStationIP = %s:%d" % (cmdStationIP, cmdStationPort))
     if cmdStationIP is None:
