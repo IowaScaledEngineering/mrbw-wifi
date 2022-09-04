@@ -255,7 +255,16 @@ while True:
           pass
 
         sysState.isCmdStnConnected = True
-      except:
+      except Exception as e:
+        print(e)
+        try:
+          commandStation.disconnect()
+        except Exception as e:
+          pass
+        
+        # If EHOSTUNREACH or something, we probably don't have a network
+        time.sleep(1)
+        sysState.isWifiConnected = False
         continue
 
     elif sysState.cmdStationType == 'esu':
@@ -268,7 +277,16 @@ while True:
         sysState.isCmdStnConnected = True
       except Exception as e:
         print(e)
-        continue
+        try:
+          commandStation.disconnect()
+        except Exception as e:
+          pass
+        
+        # If EHOSTUNREACH or something, we probably don't have a network
+        time.sleep(1)
+        sysState.isWifiConnected = False
+        continue        
+        
       while uart.read(1024) is not None: # Flush RX buffer
         pass
 
