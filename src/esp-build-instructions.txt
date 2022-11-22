@@ -41,7 +41,7 @@ make BOARD=ise_mrbw_wifi_esp32s2
 
 If this succeeds, you'll have a firmware.bin file in build-ise_mrbw_wifi_esp32s2
 
-Unplug mrbw-wifi, set BL switch, plug in while holding reset button.  Release reset button
+Unplug mrbw-wifi, set BL switch, plug in
 sudo chmod 0666 /dev/ttyACM0 ; esptool.py --port /dev/ttyACM0 --after=no_reset write_flash 0x0 build-XXX/firmware.bin
 
 Unplug, turn off BL switch, replug.
