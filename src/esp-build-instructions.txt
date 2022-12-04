@@ -37,6 +37,9 @@ run make-header.py in mrbw-wifi/src to generate mrbwwifi-init.h
 Copy mrbwwifi-init.h to circuitpython/supervisor/shared
 
 Build firmware image
+Go into circuitpython/ports/espressif
+. ~/esp/esp-idf/export.sh  (to set the IDF environment stuff right, if you haven't already)
+make BOARD=ise_mrbw_wifi_esp32s2 clean
 make BOARD=ise_mrbw_wifi_esp32s2
 
 If this succeeds, you'll have a firmware.bin file in build-ise_mrbw_wifi_esp32s2
