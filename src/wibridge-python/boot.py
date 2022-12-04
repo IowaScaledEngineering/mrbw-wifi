@@ -424,11 +424,10 @@ if not switchFR.value:
   except:
     ledPin = None
 
-  print("Erasing filesystem")
-  storage.erase_filesystem()
-  if ledPin != None:
-    neopixel_write.neopixel_write(ledPin, bytearray([0,64,0]))
+  if not switchFR.value: # Double check the switch is still set
+    print("Erasing filesystem")
+    storage.erase_filesystem()
+    # It never gets past here - erasing the filesystem causes a hard restart
+  else:
+    neopixel_write.neopixel_write(ledPin, bytearray([0,0,0]))
 
-  print("Done")
-  while(1):
-    pass
