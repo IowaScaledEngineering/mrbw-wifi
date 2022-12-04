@@ -211,7 +211,7 @@ def doFirmwareUpgrade(fwFilename, devType="00000000", path='/'):
   #   10 bytes size (ascii, 0 padded)
   #   10 bytes offset into data blob from start of file (ascii, 0 padded)
   #   255 bytes filename
-  #   First record is special - size of number of file records (inclusive), offset of start of data blob, filename of data MD5
+  #   First record is special - size of number of file records (inclusive), size of data blob in bytes, filename of data MD5
   # 32 bytes MD5 of header (ASCII, hex)
 
   fwFileSize = os.path.getsize(fwFilename)
