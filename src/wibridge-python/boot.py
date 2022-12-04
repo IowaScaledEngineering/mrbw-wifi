@@ -416,6 +416,11 @@ if not switchFR.value:
     ledPin = digitalio.DigitalInOut(board.IO45)
     ledPin.direction = digitalio.Direction.OUTPUT
     neopixel_write.neopixel_write(ledPin, bytearray([0,0,64]))
+    for i in range(0,10):
+      time.sleep(0.5)
+      neopixel_write.neopixel_write(ledPin, bytearray([0,0,0]))
+      time.sleep(0.5)
+      neopixel_write.neopixel_write(ledPin, bytearray([0,0,64]))
   except:
     ledPin = None
 
