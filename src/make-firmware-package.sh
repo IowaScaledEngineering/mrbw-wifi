@@ -76,5 +76,5 @@ git add ../releases/$BIN_FILENAME
 cd ../..
 
 git commit -m "Automatically generating $BIN_FILENAME"
-
+git push
 
