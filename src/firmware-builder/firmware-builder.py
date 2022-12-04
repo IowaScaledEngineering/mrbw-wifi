@@ -114,4 +114,17 @@ if __name__ == '__main__':
   except:
     pass
 
-  sys.exit(main(path, outputFilename))
+  major = 0
+  minor = 0
+  delta = 0
+  gitver = "UNKNWN"
+
+  try:
+    major = int(sys.argv[3])
+    minor = int(sys.argv[4])
+    delta = int(sys.argv[5])
+    gitver = int(sys.argv[6])
+  except:
+    pass
+  
+  sys.exit(main(path, outputFilename, semver=(major, minor,delta), gitver=gitver))
