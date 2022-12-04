@@ -2,7 +2,7 @@ import os
 import tempfile
 
 root_dir = 'wibridge-python'
-file_list = [ 'boot.py', 'version.py' 'config.txt', 'code.py', 'esu.py', 'font5x8.bin', 'ise.lgo', 'mrbus.py', 'MRBusThrottle.py', 'screen.py', 'switches.py', 'systemstate.py', 'withrottle.py', 'lib/adafruit_framebuf.mpy', 'lib/adafruit_ssd1306.mpy', 'lib/font5x8.bin' ]
+file_list = [ 'boot.py', 'version.py', 'config.txt', 'code.py', 'esu.py', 'font5x8.bin', 'ise.lgo', 'mrbus.py', 'MRBusThrottle.py', 'screen.py', 'switches.py', 'systemstate.py', 'withrottle.py', 'lib/adafruit_framebuf.mpy', 'lib/adafruit_ssd1306.mpy', 'lib/font5x8.bin' ]
 fData = { }
 
 outFile = 'mrbwwifi-init.h'
