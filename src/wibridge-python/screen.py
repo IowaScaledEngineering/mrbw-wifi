@@ -2,6 +2,17 @@ import adafruit_ssd1306
 import time
 import microcontroller
 import supervisor
+import board
+import neopixel_write
+import digitalio
+import board
+from version import _version_major_, _version_minor_, _version_delta_, _version_git_
+
+WHITE = bytearray([64, 64, 64])
+RED = bytearray([0, 64, 0])
+AMBER = bytearray([32, 64, 0])
+GREEN = bytearray([64, 0, 0])
+OFF = bytearray([0,0,0])
 
 class Screen:
   def __init__(self):
@@ -14,9 +25,26 @@ class Screen:
     self.lastSSID = ''
     self.debug = False
 
+    self.ledPin = None
+    try:
+      self.ledPin = digitalio.DigitalInOut(board.IO45)
+      self.ledPin.direction = digitalio.Direction.OUTPUT
+    except Exception as e:
+      print("Cannot init LED pin\n%s" % (e))
+      self.ledPin = None
+
+    self.lastLEDColor = None
+
+  def setLED(self, color):
+    if self.lastLEDColor != color:
+      self.lastLEDColor = color
+      if self.ledPin != None:
+        neopixel_write.neopixel_write(self.ledPin, self.lastLEDColor)
+
   def init(self, i2c):
     self.display = adafruit_ssd1306.SSD1306_I2C(128, 32, i2c)
     self.clearScreen()
+    self.setLED(OFF)
     
   def clearScreen(self):
     self.display.fill(0)
@@ -60,7 +88,8 @@ class Screen:
 #  1:[SSID-NAME-HERE-HERE-H] (scrolling)
 #  2:[192.168.255.255:ppppp]
 #  3:[R:-sss cc xxC xxxxlps] s=rssi, cc=channel
-    displayUpdateStart = time.monotonic_ns()
+    if self.debug:
+      displayUpdateStart = time.monotonic_ns()
 
     # Update spinner
     self.spinner = (self.spinner + 1) % len(self.spinnerElements)
@@ -74,6 +103,8 @@ class Screen:
     self.writeBufferedText("T:%02d B:%02d" % (sysState.throttlesConnected, sysState.baseAddr), 12, 0);
 
     # Update SSID line if we're connected
+    ledColor = RED
+    
     if not sysState.isWifiConnected:
       if sysState.isAutoNetwork:
         newSSIDText = "%-21.21s" % ("(Searching...)")
@@ -82,6 +113,7 @@ class Screen:
       ipText = "%-21.21s" % ("(Not Connected)")
       rssiText = "R:---"
     else:
+      ledColor = AMBER
       newSSIDText = "%-21.21s" % (sysState.networkSSID)
       ipText = "%-21.21s" % (sysState.ipv4)
       rssiText = "R:%02ddB" % (min(0, max(-99, sysState.rssi)))
@@ -105,25 +137,25 @@ class Screen:
     
     networkText = "NONE"
     if sysState.cmdStationType in self.networkText.keys():
-        networkText = self.networkText[sysState.cmdStationType]
+      networkText = self.networkText[sysState.cmdStationType]
     self.writeBufferedText(networkText, 2, 0)
     if self.debug:
       print("Content %d uS" % ((time.monotonic_ns() - displayUpdateStart) / 1000))
 
+    if sysState.isCmdStnConnected:
+      ledColor = GREEN
 
+    self.setLED(ledColor)
     self.flushBufferedText()
     if self.debug:
       print("Flush %d uS" % ((time.monotonic_ns() - displayUpdateStart) / 1000))
 
-
-
-
-  def splash_screen(self):
+  def splash_screen(self, version=""):
     self.clearScreen()
-    self.writeText(" Iowa Scaled", 0, 0)
-    self.writeText(" Engineering", 0, 1)
-    self.writeText(" MRBW-WIFI  ", 0, 2)
-    self.writeText(" v1.0 [    ]", 0, 3)
+    self.writeText("Iowa Scaled", 0, 0)
+    self.writeText("Engineering", 0, 1)
+    self.writeText("MRBW-WIFI  ", 0, 2)
+    self.writeText("%d.%d.%d %6.6s" % (_version_major_, _version_minor_, _version_delta_, _version_git_), 0, 3)
     logoXOffset = 84
 
     with open("/ise.lgo", 'rb') as logo:

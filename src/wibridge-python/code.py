@@ -54,14 +54,14 @@ if not sysState.configurationValid:
   while True:
     pass
 
-screen.writeText('C', 7, 3)
+screen.writeText('C', 10, 2)
 
 wifi.radio.hostname = sysState.hostName
 
 if sysState.isAutoNetwork:
   sysState.scanForNetworks()
 
-screen.writeText('N', 8, 3)
+screen.writeText('N', 11, 2)
 
 while time.monotonic() - 5 < splashStart:
   pass
