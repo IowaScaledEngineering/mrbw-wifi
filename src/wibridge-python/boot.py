@@ -6,11 +6,7 @@ import os
 import sys
 import binascii
 import re
-
-switchFR = digitalio.DigitalInOut(board.IO21)
-switchFR.direction = digitalio.Direction.INPUT
-switchFR.pull = digitalio.Pull.UP
-time.sleep(0.05)
+import storage
 
 # This is hideous, but most circuitpython implementations don't include MD5 or any of
 # hashlib.  So I had to borrow this.  
@@ -410,10 +406,24 @@ except:
   # No new firmware, go on with life
   pass
 
+switchFR = digitalio.DigitalInOut(board.IO21)
+switchFR.direction = digitalio.Direction.INPUT
+switchFR.pull = digitalio.Pull.UP
+time.sleep(0.05)
+
 if not switchFR.value:
+  try:
+    ledPin = digitalio.DigitalInOut(board.IO45)
+    ledPin.direction = digitalio.Direction.OUTPUT
+    neopixel_write.neopixel_write(ledPin, bytearray([0,0,64]))
+  except:
+    ledPin = None
+
   print("Erasing filesystem")
   storage.erase_filesystem()
+  if ledPin != None:
+    neopixel_write.neopixel_write(ledPin, bytearray([0,64,0]))
+
   print("Done")
   while(1):
     pass
-
