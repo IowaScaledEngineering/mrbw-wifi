@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime
 
 files_to_include = [
+  'version.py',
   'code.py',
   'esu.py',
   'font5x8.bin',
