@@ -24,8 +24,6 @@ class SystemState:
     self.configurationValid = False
     self.configurationError = "Conf Not Loaded"
     self.lnwiSSIDMatch = re.compile(r'Dtx\d+-[A-Za-z0-9 ]+_[0-9A-F][0-9A-F][0-9A-F][0-9A-F]-[0-7]')
-    self.esuSSIDMatch = re.compile(r'ESUWIFI')
-    self.mrcSSIDMatch = re.compile(r'MRCWi-Fi')
 
   def getMrbusBaseAddr(self):
     return 0xD0 + self.baseAddr
@@ -62,26 +60,21 @@ class SystemState:
 
     for network in networks:
       print("[%-32.32s] Ch: %2d RSSI: %d Auth: %s" % (str(network.ssid, "utf-8"), network.channel, network.rssi, network.authmode))
-      #if self.lnwiSSIDMatch.match(network.ssid):
-       # print("LNWI Match!")
       if (self.cmdStationType is None or self.cmdStationType == 'lnwi') and self.lnwiSSIDMatch.match(network.ssid):
-        autonets.append(('lnwi', network.ssid))
-      elif (self.cmdStationType is None or self.cmdStationType == 'esu') and self.esuSSIDMatch.match(network.ssid):
-        autonets.append(('esu', network.ssid))
-      elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and self.mrcSSIDMatch.match(network.ssid):
-        autonets.append(('withrottle', network.ssid))
-
+        autonets.append(('lnwi', network.ssid, ''))
+      elif (self.cmdStationType is None or self.cmdStationType == 'esu') and network.ssid == 'ESUWIFI':
+        autonets.append(('esu', network.ssid, 'cabcontrol'))
+      elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'MRCWi-Fi':
+        autonets.append(('withrottle', network.ssid, ''))
+      elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'RPi-JMRI':
+        autonets.append(('withrottle', network.ssid, 'rpI-jmri'))
     if 0 == len(autonets):
       self.networkSSID = None
       self.networkPassword = ""
       return
 
     # Connect to the strongest access point we can see that matches autoconnect criteria
-    (self.cmdStationType,self.networkSSID) = autonets[0]
-    if self.cmdStationType == 'esu':
-      self.networkPassword = 'cabcontrol'
-    else:
-      self.networkPassword = ""
+    (self.cmdStationType,self.networkSSID,self.networkPassword) = autonets[0]
 
   def readConfigurationFile(self, filename):
     print("reading file %s" % (filename))
