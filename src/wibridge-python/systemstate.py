@@ -24,6 +24,8 @@ class SystemState:
     self.configurationValid = False
     self.configurationError = "Conf Not Loaded"
     self.lnwiSSIDMatch = re.compile(r'Dtx\d+-[A-Za-z0-9 ]+_[0-9A-F][0-9A-F][0-9A-F][0-9A-F]-[0-7]')
+    self.dccexSSIDMatch = re.compile(r'DCCEX_[A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9]')
+
 
   def getMrbusBaseAddr(self):
     return 0xD0 + self.baseAddr
@@ -62,19 +64,35 @@ class SystemState:
       print("[%-32.32s] Ch: %2d RSSI: %d Auth: %s" % (str(network.ssid, "utf-8"), network.channel, network.rssi, network.authmode))
       if (self.cmdStationType is None or self.cmdStationType == 'lnwi') and self.lnwiSSIDMatch.match(network.ssid):
         autonets.append(('lnwi', network.ssid, ''))
+      
       elif (self.cmdStationType is None or self.cmdStationType == 'esu') and network.ssid == 'ESUWIFI':
         autonets.append(('esu', network.ssid, 'cabcontrol'))
+      
       elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'MRCWi-Fi':
         autonets.append(('withrottle', network.ssid, ''))
+      
       elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'RPi-JMRI':
+        if self.cmdStationIP is None:
+          sysState.cmdStationIP = "192.168.6.1"
         autonets.append(('withrottle', network.ssid, 'rpI-jmri'))
-    if 0 == len(autonets):
-      self.networkSSID = None
-      self.networkPassword = ""
-      return
 
-    # Connect to the strongest access point we can see that matches autoconnect criteria
-    (self.cmdStationType,self.networkSSID,self.networkPassword) = autonets[0]
+      elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and self.dccexSSIDMatch.match(network.ssid):
+        password = "PASS_" + network.ssid[6:]
+        autonets.append(('withrottle', network.ssid, password))
+        if self.cmdStationIP is None:
+          sysState.cmdStationIP = "192.168.4.1"
+        if self.cmdStationPort is None:
+          sysState.cmdStationPort = 2560
+
+       # If we found an automatic network to connect to, break out
+      if len(autonets):
+        (self.cmdStationType,self.networkSSID,self.networkPassword) = autonets[0]
+        return
+       
+    self.networkSSID = None
+    self.networkPassword = ""
+    return
+
 
   def readConfigurationFile(self, filename):
     print("reading file %s" % (filename))
