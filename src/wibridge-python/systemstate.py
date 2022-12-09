@@ -18,7 +18,7 @@ class SystemState:
     self.forceScreenUpdate = False
     self.cmdStationIP = None
     self.cmdStationPort = None
-
+    self.conflictingBaseSeen = 0
     self.rssi = -100
     self.lps = 0
     self.configurationValid = False

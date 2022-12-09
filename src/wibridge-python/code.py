@@ -153,7 +153,7 @@ while True:
         wifi.radio.connect(sysState.networkSSID)
       else:
         wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
-#      wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
+
       pool = socketpool.SocketPool(wifi.radio)
       print("My IP address is", wifi.radio.ipv4_address)
       print("My gateway is", wifi.radio.ipv4_gateway)
@@ -292,8 +292,7 @@ while True:
         print("Got packet %s" % (pkt))
     
     if pkt.src == sysState.getMrbusBaseAddr():
-      print("Conflicting ProtoThrottle base station detected!!!\nTurning Error LED on\n")
-      errorLightOn = True
+      sysState.conflictingBaseSeen = time.monotonic()
 
     # If this looks like a throttle packet, do something with it
     if pkt.cmd == 0x53 and len(pkt.data) == 9 and sysState.getMrbusBaseAddr() == pkt.dest:

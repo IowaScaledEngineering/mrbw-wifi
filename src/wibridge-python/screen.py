@@ -99,8 +99,16 @@ class Screen:
       self.writeBufferedText('U', 11, 0);
     else:
       self.writeBufferedText(' ', 11, 0);
+      
+    baseIndicator = ' B'
+    if sysState.conflictingBaseSeen != 0 and time.monotonic() - sysState.conflictingBaseSeen < 5:
+      baseIndicator = '!!'
+    else:
+      sysState.conflictingBaseSeen = 0
+      
     # Update throttles connected and base address
-    self.writeBufferedText("T:%02d B:%02d" % (sysState.throttlesConnected, sysState.baseAddr), 12, 0);
+    self.writeBufferedText("T:%02d%2.2s:%02d" % (sysState.throttlesConnected, baseIndicator, sysState.baseAddr), 12, 0);
+
 
     # Update SSID line if we're connected
     ledColor = RED
