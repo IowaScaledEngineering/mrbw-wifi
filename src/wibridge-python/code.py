@@ -25,6 +25,7 @@ print("Initial memory %d" % (gc.mem_free()))
 debug = False
 
 uart = busio.UART(board.IO17, board.IO18, baudrate=115200, timeout=0, receiver_buffer_size = 1024)
+uart.reset_input_buffer()
 i2c = busio.I2C(board.SCL, board.SDA, frequency=400000)
 dipSwitches = Switches()
 mrbee = mrbus.mrbus(0x03, uart)
@@ -71,18 +72,6 @@ lastpkt = time.monotonic()
 
 print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
 
-
-#print("Connecting to %s"%secrets["ssid"])
-#wifi.radio.connect(secrets["ssid"], secrets["password"])
-#print("Connected to %s!"%secrets["ssid"])
-#print("My IP address is", wifi.radio.ipv4_address)
-
-#ipv4 = "%s" % (wifi.radio.ipv4_address)
-
-#write_text(display, "NT:" + secrets["ssid"], 0, 0)
-#write_text(display, "IP:" + ipv4, 0, 1)
-
-
 loopCnt = 0
 displayUpdateTime = 0
 throttles = { }
@@ -110,21 +99,6 @@ def serverFind(pool, timeout, port):
       print(e)
 
   return None
-
-def rxtx(conn):
-  recvBuffer = bytearray(256)
-  # If we have a command, send it
-  cmdStr = "get(1,info)"
-  print("ESU TX: Sending [%s]" % (cmdStr))
-  conn.send(str.encode(cmdStr))
-  
-  while True:
-    try:
-      bytesReceived = conn.recv_into(recvBuffer, len(recvBuffer))
-      print("ESU RX: %d [%s]" % (bytesReceived, recvBuffer[0:bytesReceived].decode()))
-    except Exception as e:
-      print("RXTX: ", e)
-      time.sleep(0.2)
 
 while True:
   loopCnt += 1
@@ -311,10 +285,12 @@ while True:
     continue
 
 
-  pkt = mrbee.getpkt()
-  
-  if pkt is not None:
-    #print("Got packet from [0x%02X]" % (pkt.src))
+  pktlist = mrbee.getpkt()
+  for pkt in pktlist:
+    if debug:
+      if pkt.cmd == 0x53 and len(pkt.data) == 9 and sysState.getMrbusBaseAddr() == pkt.dest:
+        print("Got packet %s" % (pkt))
+    
     if pkt.src == sysState.getMrbusBaseAddr():
       print("Conflicting ProtoThrottle base station detected!!!\nTurning Error LED on\n")
       errorLightOn = True
