@@ -63,30 +63,28 @@ def mrbusCRC16Calculate(data):
 
 class mrbus(object):
   def disconnect(self):
-     self.mrbs.disconnect()
+    pass
 
   def __init__(self, addr, serialPort):
     self.rxBuffer = b''
     self.addr=addr
-    self.pktlst=[]
-    self.handlern=0
-    self.handlers=[]
     self.serial = serialPort
     self.debug = False
 
   def bytesToString(self, pktBuffer):
-    str = ""
+    ret = ""
     for c in pktBuffer:
-      str += "%02X " % (c)
-    return str
+      ret += "%02X " % (c)
+    return ret
 
   def bytesToPacket(self, pktBuffer):
+    debug = self.debug
     unescapedBuffer = [ ]
     rxEscapeNext = False
     rxProcessing = False
     rxExpectedPktLen = 255
     
-    if self.debug:
+    if debug:
       print("bytesToPacket = [%s]" % (self.bytesToString(pktBuffer)))
     
     for incomingByte in pktBuffer:
@@ -94,7 +92,7 @@ class mrbus(object):
       #  print("mrbee got byte [0x%02x]" % incomingByte)
 
       if 0x7E == incomingByte:
-        if self.debug:
+        if debug:
           print("mrbee starting new packet")
         unescapedBuffer = [ 0x7E ]
         rxEscapeNext = False
@@ -102,13 +100,13 @@ class mrbus(object):
         rxExpectedPktLen = 255
         
       elif 0x7D == incomingByte:
-        if self.debug:
+        if debug:
           print("mrbee setting escape")
         rxEscapeNext = True
      
       else:
         if not rxProcessing:
-          if self.debug:
+          if debug:
             print("mrbee got byte %02X outside processing, ignoring\n" % (incomingByte))
           pktBuffer = pktBuffer[1:] # Just chew off the first byte and try again
           continue
@@ -122,18 +120,17 @@ class mrbus(object):
           rxExpectedPktLen = unescapedBuffer[1] * 256 + unescapedBuffer[2] + 4
 
         if len(unescapedBuffer) == rxExpectedPktLen:
-          #self.logger.debug("mrbee - think we may have a packet")
           pktChecksum = 0
           for i in range(3, rxExpectedPktLen):
             pktChecksum = (pktChecksum + unescapedBuffer[i]) & 0xFF
 
           if 0xFF != pktChecksum:
             # Error, conintue
-            if self.debug:
+            if debug:
               print("mrbee - checksum error - checksum is %02X" % (pktChecksum))
             return None
 
-          if self.debug:
+          if debug:
             print("mrbee - valid packet checksum is %02X" % (pktChecksum))
 
           pktDataOffset = 0
@@ -150,7 +147,7 @@ class mrbus(object):
           retPacket = packet(unescapedBuffer[pktDataOffset + 0], unescapedBuffer[pktDataOffset + 1], unescapedBuffer[pktDataOffset + 5], unescapedBuffer[(pktDataOffset + 6):-1])
           return retPacket
     return None
-
+  
   def byteSplit(self, rxBuffer):
     retArray = []
     buildBuffer = []
@@ -171,26 +168,27 @@ class mrbus(object):
     # If there's no new data, then we processed everything we could last time
     # Just bail
     c = self.serial.read(self.serial.in_waiting)
-    if c == None:
+    if c == None or 0 == len(c):
       return retPkts
 
     # Append new data to last time's leftovers
-    self.rxBuffer += c
-    # Split based on 0x7E start character
-    potentialPkts = self.byteSplit(self.rxBuffer)
+    rxBuffer = self.rxBuffer + c
 
-    
-    self.rxBuffer = b''
+    # Split based on 0x7E start character
+    potentialPkts = self.byteSplit(rxBuffer)
+
+    rxBuffer = b''
     for pktBuffer in potentialPkts:
       pkt = self.bytesToPacket(pktBuffer)
       if pkt is not None:
         retPkts.append(pkt)
-        self.rxBuffer = b''
+        rxBuffer = b''
       else:
-        self.rxBuffer = pktBuffer
+        rxBuffer = pktBuffer
 
     if self.debug and len(self.rxBuffer) != 0:
-      print("Leftovers = [%s], pkts=%d" % (self.bytesToString(self.rxBuffer), len(retPkts)))
+      print("Leftovers = [%s], pkts=%d" % (self.bytesToString(rxBuffer), len(retPkts)))
+    self.rxBuffer = rxBuffer
     return retPkts
 
   def sendpkt(self, dest, data, src=None):
