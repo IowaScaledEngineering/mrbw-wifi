@@ -73,16 +73,16 @@ class SystemState:
       
       elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'RPi-JMRI':
         if self.cmdStationIP is None:
-          sysState.cmdStationIP = "192.168.6.1"
+          self.cmdStationIP = "192.168.6.1"
         autonets.append(('withrottle', network.ssid, 'rpI-jmri'))
 
       elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and self.dccexSSIDMatch.match(network.ssid):
         password = "PASS_" + network.ssid[6:]
         autonets.append(('withrottle', network.ssid, password))
         if self.cmdStationIP is None:
-          sysState.cmdStationIP = "192.168.4.1"
+          self.cmdStationIP = "192.168.4.1"
         if self.cmdStationPort is None:
-          sysState.cmdStationPort = 2560
+          self.cmdStationPort = 2560
 
        # If we found an automatic network to connect to, break out
       if len(autonets):
