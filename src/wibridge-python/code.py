@@ -16,6 +16,8 @@ import MRBusThrottle
 from switches import Switches
 from screen import Screen
 from systemstate import SystemState
+from microcontroller import watchdog
+from watchdog import WatchDogMode
 
 import gc
 
@@ -29,6 +31,11 @@ uart.reset_input_buffer()
 i2c = busio.I2C(board.SCL, board.SDA, frequency=400000)
 dipSwitches = Switches()
 mrbee = mrbus.mrbus(0x03, uart)
+
+watchdog.timeout = 30
+watchdog.mode = WatchDogMode.RESET
+watchdog.feed()
+
 
 screen = Screen()
 screen.init(i2c)
@@ -102,9 +109,8 @@ def serverFind(pool, timeout, port):
 
 while True:
   loopCnt += 1
+  watchdog.feed()
   currentTime = time.monotonic()
-  
-  showTimeDiag = False
   # Housekeeping Tasks - Run on a Schedule
   
   # Every second, update the screen
@@ -119,7 +125,6 @@ while True:
     mrbee.addr = sysState.getMrbusBaseAddr()
     
     screen.status_screen(sysState)
-    showTimeDiag = False
     loopCnt = 0
     sysState.forceScreenUpdate = False
 
@@ -130,9 +135,6 @@ while True:
     statusPacket = [ ord('v'), 0x80, gitver[2], gitver[1], gitver[0], 1, 0 ] + sysState.getInterfaceVerPktText()
     mrbee.sendpkt(0xFF, statusPacket)
     lastStatusTime = currentTime
-
-  if showTimeDiag:
-    loopStartTime = time.monotonic_ns()
 
   # If we don't have a wifi connection, the first order of business is to get one
   if not sysState.isWifiConnected:
@@ -177,7 +179,6 @@ while True:
   # At this point, wifi is good, see if we need to build the command station connection
 
   if not sysState.isCmdStnConnected:
-    # FIXME: Do an IP scan if we don't have an IP
     openSocket = None
     cmdStationIP = sysState.cmdStationIP
     cmdStationPort = sysState.cmdStationPort
