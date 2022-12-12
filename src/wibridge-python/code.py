@@ -115,6 +115,7 @@ while True:
   
   # Every second, update the screen
   if sysState.forceScreenUpdate or currentTime > lastLoopUpdate + 1:
+    gc.collect()  # Not sure why, but it seems to be less crashy if the gc runs regularly rather than on demand
     sysState.lps = loopCnt / (currentTime - lastLoopUpdate)
     sysState.throttlesConnected = len(throttles)
     lastLoopUpdate = currentTime
