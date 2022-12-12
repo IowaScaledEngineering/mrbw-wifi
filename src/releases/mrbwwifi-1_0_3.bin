@@ -1,0 +1,1821 @@
+ISEFWBIN01MRBWWIFI20221212/12561101.00.03+UNKNWNENDH00000000140000072917f5fe78bda9228142acb1d71a5d13a694                                                                                                                                                                                                                               00000001190000004209version.py                                                                                                                                                                                                                                                     00000103260000004328code.py                                                                                                                                                                                                                                                        00000120260000014654esu.py                                                                                                                                                                                                                                                         00000012820000026680font5x8.bin                                                                                                                                                                                                                                                    00000001760000027962ise.lgo                                                                                                                                                                                                                                                        00000075470000028138mrbus.py                                                                                                                                                                                                                                                       00000052570000035685MRBusThrottle.py                                                                                                                                                                                                                                               00000060920000040942screen.py                                                                                                                                                                                                                                                      00000011960000047034switches.py                                                                                                                                                                                                                                                    00000063170000048230systemstate.py                                                                                                                                                                                                                                                 00000136550000054547withrottle.py                                                                                                                                                                                                                                                  00000047960000068202lib/adafruit_framebuf.mpy                                                                                                                                                                                                                                      00000028460000072998lib/adafruit_ssd1306.mpy                                                                                                                                                                                                                                       00000012820000075844lib/font5x8.bin                                                                                                                                                                                                                                                513121512053479152541b34c2b68e30_version_git_ = "9948879ac874d5e34915a4261289b868882a7745"
+_version_major_ = 1
+_version_minor_ = 0
+_version_delta_ = 3
+import time
+import re
+
+import board
+import digitalio
+import busio
+import mrbus
+import microcontroller
+import ipaddress
+import wifi
+import socketpool
+
+import withrottle
+import esu
+import MRBusThrottle
+from switches import Switches
+from screen import Screen
+from systemstate import SystemState
+from microcontroller import watchdog
+from watchdog import WatchDogMode
+
+import gc
+
+gc.collect()
+print("Initial memory %d" % (gc.mem_free()))
+
+debug = False
+
+uart = busio.UART(board.IO17, board.IO18, baudrate=115200, timeout=0, receiver_buffer_size = 1024)
+uart.reset_input_buffer()
+i2c = busio.I2C(board.SCL, board.SDA, frequency=400000)
+dipSwitches = Switches()
+mrbee = mrbus.mrbus(0x03, uart)
+
+watchdog.timeout = 30
+watchdog.mode = WatchDogMode.RESET
+watchdog.feed()
+
+
+screen = Screen()
+screen.init(i2c)
+
+screen.splash_screen()
+splashStart = time.monotonic()
+
+while time.monotonic() - 1 < splashStart:
+  pass
+
+sysState = SystemState()
+sysState.readConfigurationFile("/config.txt")
+
+if not sysState.configurationValid:
+  screen.clearScreen()
+#     000000000011111111112
+#     012345678901234567890
+#     Configuration Invalid
+  screen.writeBufferedText("Configuration Invalid", 0, 0)
+  screen.writeBufferedText(sysState.configurationError[0:22], 0, 1)
+  screen.writeBufferedText(sysState.configurationError[22:43], 0, 1)
+  screen.writeBufferedText(sysState.configurationError[43:64], 0, 1)
+  screen.flushBufferedText()
+  while True:
+    pass
+
+screen.writeText('C', 10, 2)
+
+wifi.radio.hostname = sysState.hostName
+
+if sysState.isAutoNetwork:
+  sysState.scanForNetworks()
+
+screen.writeText('N', 11, 2)
+
+while time.monotonic() - 5 < splashStart:
+  pass
+
+
+lastpkt = time.monotonic()
+
+print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
+
+loopCnt = 0
+displayUpdateTime = 0
+throttles = { }
+lastLoopUpdate = time.monotonic() - 2
+lastStatusTime = time.monotonic() - 2
+screen.clearScreen()
+
+gitver = [ 0x12, 0x34, 0x56 ]
+
+def serverFind(pool, timeout, port):
+  """Given a port, this searches the local class C subnet for anything with that port open."""
+  conn = pool.socket(socketpool.SocketPool.AF_INET, socketpool.SocketPool.SOCK_STREAM)
+  (o1,o2,o3,o4) = ("%s" % sysState.ipv4).split('.')
+
+  print("Starting server scan on subnet (%s.%s.%s.255)" % (o1, o2, o3))
+  for i in range(1,255):
+    scanIP = "%s.%s.%s.%d" % (o1, o2, o3, i)
+    conn.settimeout(timeout)
+    try:
+      print("Trying %s:%d" % (scanIP, port))
+      conn.connect((scanIP, port))
+      return (scanIP, conn)
+    except Exception as e:
+      time.sleep(0.1)
+      print(e)
+
+  return None
+
+while True:
+  loopCnt += 1
+  watchdog.feed()
+  currentTime = time.monotonic()
+  # Housekeeping Tasks - Run on a Schedule
+  
+  # Every second, update the screen
+  if sysState.forceScreenUpdate or currentTime > lastLoopUpdate + 1:
+    gc.collect()  # Not sure why, but it seems to be less crashy if the gc runs regularly rather than on demand
+    sysState.lps = loopCnt / (currentTime - lastLoopUpdate)
+    sysState.throttlesConnected = len(throttles)
+    lastLoopUpdate = currentTime
+
+    if wifi.radio.ap_info is not None:
+      sysState.rssi = wifi.radio.ap_info.rssi
+    sysState.baseAddr = dipSwitches.getBaseAddr()
+    mrbee.addr = sysState.getMrbusBaseAddr()
+    
+    screen.status_screen(sysState)
+    loopCnt = 0
+    sysState.forceScreenUpdate = False
+
+  # Send periodic version packets so throttles see us, even if we aren't useful
+  if currentTime > lastStatusTime + sysState.statusBroadcastIntervalSeconds:
+    if debug:
+      print("PT-BRIDGE: Sending status packet")
+    statusPacket = [ ord('v'), 0x80, gitver[2], gitver[1], gitver[0], 1, 0 ] + sysState.getInterfaceVerPktText()
+    mrbee.sendpkt(0xFF, statusPacket)
+    lastStatusTime = currentTime
+
+  # If we don't have a wifi connection, the first order of business is to get one
+  if not sysState.isWifiConnected:
+    sysState.isCmdStnConnected = False
+
+    if sysState.isAutoNetwork and sysState.networkSSID is None:
+      sysState.scanForNetworks()
+
+    if sysState.networkSSID is None:
+      continue
+
+    if debug:
+      print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
+      print("Connecting to [%s] - pass [%s]" % (sysState.networkSSID, sysState.networkPassword))
+    
+    try:
+      if sysState.networkPassword == "":
+        wifi.radio.connect(sysState.networkSSID)
+      else:
+        wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
+
+      pool = socketpool.SocketPool(wifi.radio)
+      print("My IP address is", wifi.radio.ipv4_address)
+      print("My gateway is", wifi.radio.ipv4_gateway)
+
+      pingTime = wifi.radio.ping(wifi.radio.ipv4_gateway)
+      if None != pingTime:
+        print("ping is %d" % (pingTime))
+
+      sysState.ipv4 = wifi.radio.ipv4_address
+      sysState.ipv4_gateway = wifi.radio.ipv4_gateway
+      sysState.isWifiConnected = True
+
+    except Exception as e:
+      print("Connect loop:", e)
+      time.sleep(0.1)
+      sysState.isWifiConnected = False
+
+    # Head to the top of the loop to get the screen updates
+    continue
+
+  # At this point, wifi is good, see if we need to build the command station connection
+
+  if not sysState.isCmdStnConnected:
+    openSocket = None
+    cmdStationIP = sysState.cmdStationIP
+    cmdStationPort = sysState.cmdStationPort
+
+    if sysState.cmdStationType in ['lnwi', 'withrottle'] and cmdStationPort is None:
+      cmdStationPort = 12090
+    elif sysState.cmdStationType in ['esu'] and cmdStationPort is None:
+      cmdStationPort = 15471
+
+    if cmdStationIP is None:
+      # Go figure it out
+      if sysState.cmdStationType == 'lnwi':
+        # LNWIs are always on x.x.x.1, usually 192.168.(channel).1
+        (o1, o2, o3, o4) = ("%s" % sysState.ipv4).split('.')
+        cmdStationIP = "%s.%s.%s.1" % (o1, o2, o3)
+      else:
+        # Gotta go scan the subnet
+        result = serverFind(pool, 0.2, cmdStationPort)
+        if result is not None:
+          (cmdStationIP, openSocket) = result
+        else:
+          print("cmdStationIP not found")
+          continue
+
+
+    print("cmdStationIP = %s:%d" % (cmdStationIP, cmdStationPort))
+    if cmdStationIP is None:
+      continue
+
+    if sysState.cmdStationType == 'lnwi':
+      try:
+        commandStation = withrottle.WiThrottleConnection(pool)
+        commandStation.connect(cmdStationIP, cmdStationPort, "LNWI", conn=openSocket)
+        while uart.read(1024) is not None: # Flush RX buffer
+          pass
+
+        sysState.isCmdStnConnected = True
+      except Exception as e:
+        print(e)
+        try:
+          commandStation.disconnect()
+        except Exception as e:
+          pass
+        
+        # If EHOSTUNREACH or something, we probably don't have a network
+        time.sleep(1)
+        sysState.isWifiConnected = False
+        continue
+    
+    elif sysState.cmdStationType == 'withrottle':
+      try:
+        commandStation = withrottle.WiThrottleConnection(pool)
+        commandStation.connect(cmdStationIP, cmdStationPort, "JMRI", conn=openSocket)
+        while uart.read(1024) is not None: # Flush RX buffer
+          pass
+
+        sysState.isCmdStnConnected = True
+      except Exception as e:
+        print(e)
+        try:
+          commandStation.disconnect()
+        except Exception as e:
+          pass
+        
+        # If EHOSTUNREACH or something, we probably don't have a network
+        time.sleep(1)
+        sysState.isWifiConnected = False
+        continue
+
+    elif sysState.cmdStationType == 'esu':
+      try:
+        commandStation = esu.ESUConnection(pool)
+        commandStation.connect(cmdStationIP, cmdStationPort, conn=openSocket)
+        while uart.read(1024) is not None: # Flush RX buffer
+          pass
+
+        sysState.isCmdStnConnected = True
+      except Exception as e:
+        print(e)
+        try:
+          commandStation.disconnect()
+        except Exception as e:
+          pass
+        
+        # If EHOSTUNREACH or something, we probably don't have a network
+        time.sleep(1)
+        sysState.isWifiConnected = False
+        continue        
+        
+      while uart.read(1024) is not None: # Flush RX buffer
+        pass
+
+    if not sysState.isCmdStnConnected:
+      continue # No point going on without a command station
+
+  try:
+    commandStation.update()
+  except OSError as e:
+    # Probably lost connection, reset command station
+    print("Command station update exception: ", e)
+    commandStation.disconnect()
+    sysState.isCmdStnConnected = False
+    # Write something to the screen here
+    sysState.forceScreenUpdate = True
+    continue
+
+
+  pktlist = mrbee.getpkt()
+  for pkt in pktlist:
+    if debug:
+      if pkt.cmd == 0x53 and len(pkt.data) == 9 and sysState.getMrbusBaseAddr() == pkt.dest:
+        print("Got packet %s" % (pkt))
+    
+    if pkt.src == sysState.getMrbusBaseAddr():
+      sysState.conflictingBaseSeen = time.monotonic()
+
+    # If this looks like a throttle packet, do something with it
+    if pkt.cmd == 0x53 and len(pkt.data) == 9 and sysState.getMrbusBaseAddr() == pkt.dest:
+      # Create a MRBusThrottle object for every new Protothrottle that shows up
+      if pkt.src not in throttles:
+        throttles[pkt.src] = MRBusThrottle.MRBusThrottle(pkt.src)
+        print("PT-BRIDGE: Adding throttle %02X" % (pkt.src))
+
+      try:
+        throttles[pkt.src].update(commandStation, pkt)
+      except OSError as e:
+        # Probably lost connection, reset command station
+        print("Command station update exception: ", e)
+        commandStation.disconnect()
+        sysState.isCmdStnConnected = False
+        sysState.forceScreenUpdate = True
+        continue
+      except Exception as e:
+        # Non-network exception, don't reset the command station
+        print("Command station update exception, non-network: ", e)
+        continue
+
+      if debug:
+        print("PT-BRIDGE: Done processing packet from throttle %02X" % (pkt.src))
+
+  ## Clean up throttles that haven't sent a packet in a while
+  throttlesToDelete = [ ]
+
+  for (key,throttle) in throttles.items():
+    updateTime = throttle.getLastUpdateTime()
+    if (updateTime + sysState.throttleTimeoutSeconds) < currentTime:
+      print("Throttle address 0x%02X has timed out, removing" % key)
+      throttles[key].disconnect(commandStation)
+      throttlesToDelete.append(key)
+      print("Throttle disconnected")
+
+  for key in throttlesToDelete:
+    del throttles[key]
+
+# *************************************************************************
+# Title:    Client for ESU CabControl DCC System Network Interface
+# Authors:  Michael D. Petersen <railfan@drgw.net>
+#           Nathan D. Holmes <maverick@drgw.net>
+# File:     esu.py
+# License:  GNU General Public License v3
+# 
+# LICENSE:
+#   Copyright (C) 2018 Michael Petersen & Nathan Holmes
+#     
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 3 of the License, or
+#   any later version.
+# 
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+# 
+# DESCRIPTION:
+#   This class provides a way to interface with an ESU CabControl system
+#   in order to provide basic functionality, like acquiring locomotives and
+#   then setting speed, direction, and function outputs.
+# 
+#   Many thanks to ESU for providing the protocol documentation that allowed
+#   this to be developed.  Thankfully, while I don't speak German, Google 
+#   Translate does rather well.
+# 
+# *************************************************************************
+
+import socketpool
+import re
+import time
+import supervisor
+
+class ESUConnection:
+  """An interface to talk to an ESU CabControl command station via the network in order to
+     control model railway locomotives via DCC or other supported protocols."""
+  # Some pre-compiled regexs used in response parsing
+  
+  #RElocAdd = re.compile("10\s+id\[(?P<objID>\d+)\].*")
+  # REend = re.compile("<END (?P<errCd>\d+) \((?P<errStr>[a-zA-Z0-9 ]+)\)>.*") 
+  # REend = re.compile("<.*") #END.*")# (?P<errCd>\d+) .*") #\((?P<errStr>[a-zA-Z0-9 ]+)\)>.*") 
+   
+  def __init__(self, socketpool, debug = False):
+    """Constructor for the object.  Any internal initialization should occur here."""
+    self.conn = None
+    self.socketpool = socketpool
+    self.debug = True
+    self.ip = None
+    self.port = 15471
+    self.recvData = ""
+    self.lastUpdate = 0
+    self.endMatch = re.compile(r'<END (\d+) (A-Za-z0-9_)+>')
+    self.REglobalList = re.compile("(\d+)\s+addr\[(\d+)\].*")
+    self.RElocAdd = re.compile("10\s+id\[(\d+)\].*")
+    self.REfuncGet = re.compile("(\d+)\s+func\[(\d+),(\d+)\].*")
+    
+  def connect(self, ip, port = 15471, conn = None):
+    """Connect this object to an ESU CabControl command station on the IP address specified."""
+    if port is not None:
+      self.port = port
+    self.ip = ip
+      
+
+    if conn is not None:
+      print("ESU Command station connection reusing scan port")
+      self.conn = conn
+    else:
+      if self.debug:
+        print("ESU Trying to connect to %s on port %d" % (ip, port))
+      self.conn = self.socketpool.socket(socketpool.SocketPool.AF_INET, socketpool.SocketPool.SOCK_STREAM)
+      self.conn.settimeout(5)
+      self.conn.connect((self.ip, self.port))
+
+    self.conn.settimeout(0)
+    self.recvData = ""
+    self.lastUpdate = time.monotonic()
+    
+    (errCode, errTxt, results) = self.rxtx("get(1, info)")
+    if 0 == errCode:
+      print("Command station version info:\n%s" % (results))
+
+    print("ESU Command station connection succeeded on %s:%d" % (self.ip, self.port))
+
+  def disconnect(self):
+    """Disconnect from the CabControl command station in a clean way."""
+    print("ESU Disconnecting")
+    try:
+      self.conn.close()
+      print("ESU Command station connection closed successfully")
+    except:
+      print("ESU Command station connection closed with exception, ignoring")
+    self.conn = None
+    self.recvData = ""
+
+  def rxtx(self, cmdStr=None, timeout=1000):
+    # No connection?  Can't do much here
+    recvBuffer = bytearray(256)
+
+    # If we have a command, send it
+    if cmdStr is not None:
+      cmdStr = cmdStr.strip()
+      self.lastUpdate = time.monotonic()
+      if self.debug:
+        print("ESU TX: Sending [%s]" % (cmdStr))
+      self.conn.send(str.encode(cmdStr))
+      replyStart = "<REPLY %s>" % (cmdStr)
+
+    haveReply = False
+    timedOut = False
+    replyLines = None
+    errCode = 999
+    errTxt = "ERROR"
+    inReply = False
+
+    rxStart = supervisor.ticks_ms()
+
+    if cmdStr is None:
+      try:
+        bytesReceived = self.conn.recv_into(recvBuffer, len(recvBuffer))
+        if bytesReceived > 0:
+          self.recvData += recvBuffer[0:bytesReceived].decode()
+      except OSError as e:
+        if e.args[0] not in [ errno.EAGAIN, errno.ETIMEDOUT ]:
+          raise e
+          print("RXTX: " + str(e))
+      return
+
+    while not haveReply and not timedOut:
+      if (supervisor.ticks_ms()) > (rxStart + timeout):
+        timedOut = True
+        if self.debug:
+          print("ESU RX Timeout")
+
+      try:
+        try:
+          bytesReceived = self.conn.recv_into(recvBuffer, len(recvBuffer))
+          
+        except OSError as e:
+          if e.args[0] not in [ errno.EAGAIN, errno.ETIMEDOUT ]:
+            raise e
+            print("RXTX: " + str(e))
+          continue # The "safe" errors
+
+        if bytesReceived > 0:
+          self.recvData += recvBuffer[0:bytesReceived].decode()
+          #print("ESU RX: recvBuffer(%d)=[%s]" % (bytesReceived, recvBuffer[0:bytesReceived].decode()))
+          #print("ESU RX: recvData=[%s]" % (self.recvData))
+          # Split received data into lines
+          lines = self.recvData.split('\n')
+          if not lines[-1].endswith('\n'):
+            extraData = lines.pop()
+          else:
+            extraData = ""
+          extraLines = []
+
+          for line in lines:
+            #print("ESU RX: Line [%s]" % (line))
+          
+            line = line.strip()
+            if haveReply:
+              extraLines.append(line)
+
+            elif not inReply:
+              if line == replyStart:
+                #print("Found starting line [%s]" % (line))
+                replyLines = []
+                inReply = True
+              else:
+                print("Unsolicited line [%s]" % (line))
+            else:
+              if len(line) > 10 and line[0:4] == "<END":
+                (e1, errCode, errTxt) = line[1:-1].split(' ')
+                #print("Found end line [%s]" % (line))
+                haveReply = True
+              else:
+                replyLines.append(line)
+
+          if haveReply:
+            self.recvData = '\n'.join(extraLines) + extraData
+          # Otherwise, recvData still has a bunch of stuff in it
+
+      except Exception as e:
+        #print(e)
+        #time.sleep(0.001)
+        pass # FIXME - Maybe handle connection errors differently?
+
+    
+    #print("ESU rxtx_new end haveReply=%s timedOut=%s [%s]" % (haveReply, timedOut, replyLines))
+    
+    return (int(errCode), errTxt, replyLines)
+
+  def locomotiveAdd(self, locAddr, locoName=""):
+    """Internal function for adding a locomotive to the command station's object table."""
+    print("ESU: Adding locomotive address [%d]" % (locAddr))
+    cmdStr = "create(10, addr[%d], append)" % ( locAddr )
+    #FIXME result = self.rxtx(cmdStr, self.RElocAdd)
+    (errCode, errTxt, results) = self.rxtx(cmdStr)
+    
+    if 0 != errCode:
+      # Eh, now what?
+      raise Exception("Bad command station reply on esuLocomotiveAdd <%d %s>" % (errCode, errTxt))
+    
+    m = self.RElocAdd.match(results[0])
+    objID = int(m.group(1)) 
+    print("ESU: Locomotive [%d] added at objID [%d]" % (locAddr, objID))
+    return objID
+
+  def locomotiveObjectGet(self, locAddr, cabID, isLongAddress):
+    """Acquires and returns a handle that will be used to control a locomotive address."""
+    print(("ESU: locomotiveObjectGet(%d, 0x%02X)" % (locAddr, cabID)))
+    cmdStr = "queryObjects(10,addr)"
+    (errCode, errTxt, results) = self.rxtx(cmdStr)
+
+    if 0 != errCode:
+      # Eh, now what?
+      raise Exception("Bad command station reply on locomotiveObjectGet <%d %s>" % (errCode, errTxt))
+
+#    print("Got reply %d [%s]\n%s" % (errCode, errTxt, results))
+
+    for line in results:
+      m = self.REglobalList.match(line)
+      if m is None:
+        print("Line [%s] does not match REglobalList" % (line))
+        continue
+      if int(m.group(2)) == locAddr:
+        objID = int(m.group(1))
+        print("ESU: Found locomotive %s at object %d" % (locAddr, objID))
+        return objID
+
+    print("ESU: Need to add this locomotive")
+    objID = self.locomotiveAdd(locAddr)
+    
+    cmdStr = "request(%d, control, force)" % (objID)
+    self.rxtx(cmdStr)
+    return objID
+
+  def locomotiveEmergencyStop(self, objID):
+    """Issues an emergency stop command to a locomotive handle that has been previously acquired with locomotiveObjectGet()."""
+    objID = int(objID)
+    cmdStr = "set (%d, stop)" % (objID)
+    self.rxtx(cmdStr)
+
+  # For the purposes of this function, direction of 0=forward, 1=reverse
+  def locomotiveSpeedSet(self, objID, speed, direction=0):
+    """Sets the speed and direction of a locomotive via a handle that has been previously acquired with locomotiveObjectGet().  
+       Speed is 0-127, Direction is 0=forward, 1=reverse."""
+    objID = int(objID)
+    speed = int(speed)
+    direction = int(direction)
+      
+    if direction != 0 and direction != 1:
+      speed = 0
+      direction = 0
+      
+    if speed >= 127 or speed < 0:
+      speed = 0
+
+    cmdStr = "set(%d, speed[%d], dir[%d])" % (objID, speed, direction)
+    print("ESU: locomotiveSpeedSet(%d): set speed %d %s" % (objID, speed, ["FWD","REV"][direction]))
+    self.rxtx(cmdStr)
+    print("ESU: locomotiveSpeedSet complete")
+   
+  def locomotiveFunctionSet(self, objID, funcNum, funcVal):
+    """Sets or clears a function on a locomotive via a handle that has been previously acquired with locomotiveObjectGet().  
+       funcNum is 0-28 for DCC, funcVal is 0 or 1."""
+    objID = int(objID)
+    funcNum = int(funcNum)
+    funcVal = int(funcVal)
+    print("ESU: object %d set function %d to %d" % (int(objID), funcNum, funcVal))
+    cmdStr = "set(%d, func[%d,%d])" % (objID, funcNum, funcVal)
+    (errCode, errTxt, results) = self.rxtx(cmdStr)
+    if 0 == errCode:
+      print("ESU: function set complete")
+    else:
+      print("ESU: function set failed")
+
+  def locomotiveFunctionDictSet(self, objID, funcDict):
+    """Don't use this!  An effort to set multiple functions at a time that doesn't really work yet."""
+    objID = int(objID)
+    funcStr = ""
+    for funcNum in funcDict:
+      funcNum = int(funcNum)
+      funcVal = int(funcDict[funcNum])
+      funcStr = funcStr + ", func[%d,%d]" % (funcNum, funcVal)
+     
+    cmdStr = "set(%d%s])" % (objID, funcStr)
+    self.rxtx(cmdStr)
+      
+    print("ESU locomotiveFunctionSet(%d): set func %d to %d" % (int(objID), funcNum, funcVal))
+
+  def locomotiveDisconnect(self, objID):
+    print("ESU locomotiveDisconnect(%d): disconnect" % (int(objID)))
+    cmdStr = "release(%d, control)" % (objID)
+    self.rxtx(cmdStr)
+ 
+  def locomotiveFunctionsGet(self, objID):
+    print("ESU locomotiveFunctionsGet(%d)" % (int(objID)))
+    retFuncs = [0] * 29
+
+    #for funcNum in range (0,29):
+    #  cmdStr = "get(%d, func[%d])" % (objID, funcNum)
+    #  (errCode, errTxt, results) = self.rxtx(cmdStr)
+    #  if 0 == errCode:
+    #    m = self.REfuncGet.match(results[0])
+    #    if m is not None and int(m.group(2)) != 0:
+    #      retFuncs[funcNum] = 1
+    #      print("ESU locomotiveFunctionsGet(%d) func %d=1" % (objID, funcNum))
+    #  else:
+    #    print("ESU locomotiveFunctionsGet(%d) no rx for func %d" % (objID, funcNum))
+
+    return retFuncs
+
+  def update(self):
+    """This should be called frequently within the main program loop.  While it doesn't do anything for ESU,
+       other command station interfaces have housekeeping work that needs to be done periodically."""
+    if time.monotonic() > self.lastUpdate + 10:
+      (errCode, errTxt, results) = self.rxtx("get(1, status)")
+      if 0 == errCode:
+        print("ESU: ping successful")
+      else:
+        print("ESU: ping failed")
+     >[O[>>kOk>>|><~<W}W^^ < ˇÁ√Áˇ $ ˇÁ€Áˇ0H:&)y)&@@%?Z<Á<Z>>""__ __	 fâïj`````î¢ˇ¢î~ ~ **08>80>       _     $**#db6IV P   "A  A" **> Äp0   ``  >QIE> B@ rIIIF!AIM3'EEE9<JII1A!	6III6FII)     @4   "A A"Y	>A]YN||III6>AAA"AAA>IIIA			>AAQs AA  @A?"A@@@@>AAA>			>AQ!^	)F&III2?@@@? @ ?@8@?ccxaYIMC AAA  AAA@@@@@   TTx@(DD88DDD(8DD(8TTT ~	§§úxx D}@  @@= (D  A@ |xx|x8DDD8¸$$$$¸|HTTT$?D$<@@ | @ <@0@<D((DLêêê|DdTLD 6A   w   A6 <&#&<°°a:@@ z8TTUY!UUyA"TTxB!UTx@ TUy@Rr9UUUY9TTTY9UTTX  E|A E}B E|@}}(%(|TUE  TT|T|
+	I2III2:DDD:2JHH0:AA!z:B@ x ù††}=BBB==@@@=<$ˇ$$H~ICf+/¸/+ˇ	)ˆ ¿à~	 TTyA  D}A0HHJ28@@"z z
+
+r}1}&))/(&)))&0HM@ 88/»¨∫/(4˙  {  *""*U U U™U™U™ˇUˇUˇ   ˇ ˇ ˇ ˇ ˇ¸ ˜ ˇ  ˇ ˇÙ¸        ˇˇ   ˇ  ˇ ˇ    ¸ÙÙÙ  ˇ ˜˜ ˜Ù        ¸  ˇˇˇ    ˇˇˇˇˇˇˇˇ     ˇˇ8DD8D¸JJJ4~~~cUIAc8DD<@~  ~ô•Á•ô*I*LrrL0JMM00HxH0ºbZF=>III ~~*****DD_DD@QJD@@DJQ@  ˇ‡Äˇ  kk66$6	      0@ˇ   <<<<     *!    ‡   ¿        ¯   ¿              Ä ?‡ˇcèÉˇè 6¬Ä¸1>"˛cBàòÄ1|b &Ñ0à¸1 `Ç`Ä¯É¬>00 ¯É!Ä‡8à¯ÉmÄab ˆâÌ‡a$¸Ôë51Fb¿Wåâˇ_!" ˛áå » {¿?¯ˇ     class packet(object):
+  def __init__(self, dest, src, cmd, data):
+    self.dest=dest
+    self.src=src
+    self.cmd=cmd
+    self.data=data
+
+  def __hash__(self):
+    return hash(repr(self))
+
+  def __eq__(self, other):
+    return repr(self)==repr(other)
+
+  def __repr__(self):
+    return "mrbus.packet(0x%02x, 0x%02x, 0x%02x, %s)"%(self.dest, self.src, self.cmd, repr(self.data))
+
+  def __str__(self):
+    c='(0x%02X'%self.cmd
+    if self.cmd >= 32 and self.cmd <= 127:
+      c+=" '%c')"%self.cmd
+    else:
+      c+="    )"
+    return "packet(0x%02X->0x%02X) %s %2d:%s"%(self.src, self.dest, c, len(self.data), ["0x%02X"%d for d in self.data])
+
+def mrbusCRC16Update(crc, a):
+   MRBus_CRC16_HighTable = [ 0x00, 0xA0, 0xE0, 0x40, 0x60, 0xC0, 0x80, 0x20, 0xC0, 0x60, 0x20, 0x80, 0xA0, 0x00, 0x40, 0xE0 ]
+   MRBus_CRC16_LowTable =  [ 0x00, 0x01, 0x03, 0x02, 0x07, 0x06, 0x04, 0x05, 0x0E, 0x0F, 0x0D, 0x0C, 0x09, 0x08, 0x0A, 0x0B ]
+   crc16_h = (crc>>8) & 0xFF
+   crc16_l = crc & 0xFF
+   
+   i = 0
+   
+   while i < 2:
+      if i != 0:
+         w = ((crc16_h << 4) & 0xF0) | ((crc16_h >> 4) & 0x0F)
+         t = (w ^ a) & 0x0F
+      else:
+         t = (crc16_h ^ a) & 0xF0
+         t = ((t << 4) & 0xF0) | ((t >> 4) & 0x0F)
+         
+      crc16_h = (crc16_h << 4) & 0xFF
+      crc16_h = crc16_h | (crc16_l >> 4)
+      crc16_l = (crc16_l << 4) & 0xFF
+      
+      crc16_h = crc16_h ^ MRBus_CRC16_HighTable[t]
+      crc16_l = crc16_l ^ MRBus_CRC16_LowTable[t]
+      i = i + 1
+      
+   return (crc16_h<<8) | crc16_l
+
+def mrbusCRC16Calculate(data):
+   mrbusPktLen = data[2]
+   crc = 0
+   
+   for i in range(0, mrbusPktLen):
+      if i == 3 or i == 4:
+         continue
+      else:
+         a = data[i]
+      crc = mrbusCRC16Update(crc, a)
+      
+   return crc
+
+class mrbus(object):
+  def disconnect(self):
+    pass
+
+  def __init__(self, addr, serialPort):
+    self.rxBuffer = b''
+    self.addr=addr
+    self.serial = serialPort
+    self.debug = False
+
+  def bytesToString(self, pktBuffer):
+    ret = ""
+    for c in pktBuffer:
+      ret += "%02X " % (c)
+    return ret
+
+  def bytesToPacket(self, pktBuffer):
+    debug = self.debug
+    unescapedBuffer = [ ]
+    rxEscapeNext = False
+    rxProcessing = False
+    rxExpectedPktLen = 255
+    
+    if debug:
+      print("bytesToPacket = [%s]" % (self.bytesToString(pktBuffer)))
+    
+    for incomingByte in pktBuffer:
+      #if self.debug:
+      #  print("mrbee got byte [0x%02x]" % incomingByte)
+
+      if 0x7E == incomingByte:
+        if debug:
+          print("mrbee starting new packet")
+        unescapedBuffer = [ 0x7E ]
+        rxEscapeNext = False
+        rxProcessing = True
+        rxExpectedPktLen = 255
+        
+      elif 0x7D == incomingByte:
+        if debug:
+          print("mrbee setting escape")
+        rxEscapeNext = True
+     
+      else:
+        if not rxProcessing:
+          if debug:
+            print("mrbee got byte %02X outside processing, ignoring\n" % (incomingByte))
+          pktBuffer = pktBuffer[1:] # Just chew off the first byte and try again
+          continue
+
+        if rxEscapeNext:
+          incomingByte = incomingByte ^ 0x20
+          rxEscapeNext = False
+
+        unescapedBuffer.append(incomingByte)
+        if len(unescapedBuffer) == 3:
+          rxExpectedPktLen = unescapedBuffer[1] * 256 + unescapedBuffer[2] + 4
+
+        if len(unescapedBuffer) == rxExpectedPktLen:
+          pktChecksum = 0
+          for i in range(3, rxExpectedPktLen):
+            pktChecksum = (pktChecksum + unescapedBuffer[i]) & 0xFF
+
+          if 0xFF != pktChecksum:
+            # Error, conintue
+            if debug:
+              print("mrbee - checksum error - checksum is %02X" % (pktChecksum))
+            return None
+
+          if debug:
+            print("mrbee - valid packet checksum is %02X" % (pktChecksum))
+
+          pktDataOffset = 0
+          if 0x80 == unescapedBuffer[3]:
+            # 16 bit addressing
+            pktDataOffset = 14
+          elif 0x81 == unescapedBuffer[3]:
+            # 64 bit addressing
+            pktDataOffset = 8
+          else:
+            # Some other API frame, just dump it
+            return None
+          
+          retPacket = packet(unescapedBuffer[pktDataOffset + 0], unescapedBuffer[pktDataOffset + 1], unescapedBuffer[pktDataOffset + 5], unescapedBuffer[(pktDataOffset + 6):-1])
+          return retPacket
+    return None
+  
+  def byteSplit(self, rxBuffer):
+    retArray = []
+    buildBuffer = []
+    for b in rxBuffer:
+      if b == 0x7E:
+        if len(buildBuffer):
+          retArray.append(bytes(buildBuffer))
+        buildBuffer = []
+      buildBuffer.append(b)
+
+    if len(buildBuffer):
+      retArray.append(bytes(buildBuffer))
+    
+    return retArray
+
+  def getpkt(self):
+    retPkts = []
+    # If there's no new data, then we processed everything we could last time
+    # Just bail
+    c = self.serial.read(self.serial.in_waiting)
+    if c == None or 0 == len(c):
+      return retPkts
+
+    # Append new data to last time's leftovers
+    rxBuffer = self.rxBuffer + c
+
+    # Split based on 0x7E start character
+    potentialPkts = self.byteSplit(rxBuffer)
+
+    rxBuffer = b''
+    for pktBuffer in potentialPkts:
+      pkt = self.bytesToPacket(pktBuffer)
+      if pkt is not None:
+        retPkts.append(pkt)
+        rxBuffer = b''
+      else:
+        rxBuffer = pktBuffer
+
+    if self.debug and len(self.rxBuffer) != 0:
+      print("Leftovers = [%s], pkts=%d" % (self.bytesToString(rxBuffer), len(retPkts)))
+    self.rxBuffer = rxBuffer
+    return retPkts
+
+  def sendpkt(self, dest, data, src=None):
+     if src == None:
+        src = self.addr
+
+     txPktLen = 10 + len(data)   # 5 MRBus overhead, 5 XBee, and the data
+
+     txBuffer = [ 0x7E, 0x00, txPktLen, 0x01, 0x00, 0xFF, 0xFF, 0x00, dest, src, len(data) + 5, 0, 0 ] + data
+#     txBuffer.append(0x7E)       # 0 - Start 
+#     txBuffer.append(0x00)       # 1 - Len MSB
+#     txBuffer.append(txPktLen)   # 2 - Len LSB
+#     txBuffer.append(0x01)       # 3 - API being called - transmit by 16 bit address
+#     txBuffer.append(0x00)       # 4 - Frame identifier
+#     txBuffer.append(0xFF)       # 5 - MSB of dest address - broadcast 0xFFFF
+#     txBuffer.append(0xFF)       # 6 - LSB of dest address - broadcast 0xFFFF
+#     txBuffer.append(0x00)       # 7 - Transmit Options
+     
+#     txBuffer.append(dest)           # 8 / 0 - Destination
+#     txBuffer.append(src)            # 9 / 1 - Source
+#     txBuffer.append(len(data) + 5)  # 10/ 2 - Length
+#     txBuffer.append(0)              # 11/ 3 - CRC High
+#     txBuffer.append(0)              # 12/ 4 - CRC Low
+
+#     print("MRBee transmitting from %02X to %02X" % (src, dest))
+
+#     for b in data:
+#        txBuffer.append(b & 0xFF)
+
+     crc = mrbusCRC16Calculate(txBuffer[8:])
+     txBuffer[11] = 0xFF & crc
+     txBuffer[12] = 0xFF & (crc >> 8)
+
+     xbeeChecksum = 0
+     for i in range(3, len(txBuffer)):
+        xbeeChecksum = (xbeeChecksum + txBuffer[i]) & 0xFF
+     xbeeChecksum = (0xFF - xbeeChecksum) & 0xFF;
+     txBuffer.append(xbeeChecksum)
+
+     txBufferEscaped = [ txBuffer[0] ]
+     
+     escapedChars = frozenset([0x7E, 0x7D, 0x11, 0x13])
+
+     for i in range(1, len(txBuffer)):
+        if txBuffer[i] in escapedChars:
+           txBufferEscaped.append(0x7D)
+           txBufferEscaped.append(txBuffer[i] ^ 0x20)
+        else:
+           txBufferEscaped.append(txBuffer[i])
+
+     #print("txBufferEscaped is %d bytes" % (len(txBufferEscaped)))
+     #pkt = ""
+     #for i in txBufferEscaped:
+     #   pkt = pkt + "%02x " % (i)
+     #print(pkt)
+     self.serial.write(bytes(txBufferEscaped))
+
+
+# *************************************************************************
+# Title:    Client driver for MRBus Throttle (mainly the ProtoThrottle)
+# Authors:  Michael D. Petersen <railfan@drgw.net>
+#           Nathan D. Holmes <maverick@drgw.net>
+# File:     MRBusThrottle.py
+# License:  GNU General Public License v3
+# 
+# LICENSE:
+#   Copyright (C) 2018 Michael Petersen & Nathan Holmes
+#     
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 3 of the License, or
+#   any later version.
+# 
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+# 
+# DESCRIPTION:
+#   This class provides a way parse incoming MRBus throttle packets (primarily
+#   from the ProtoThrottle ( http://www.protothrottle.com/ ) and send them
+#   on to a variety of command stations as a form of protocol translator.
+# 
+# *************************************************************************
+
+import mrbus
+import sys
+import time
+
+class MRBusThrottle:
+  def __init__(self, addr):
+    self.locAddr = 0
+    self.locAddrLong = True
+    self.locSpeed = 0
+    self.locDirection = 0
+    self.locObjID = None
+    self.locEStop = 0
+    self.locFunctions = None
+    self.throttleAddr = addr
+    self.lastUpdate = 0
+    self.debug = False
+    return
+      
+  def getLastUpdateTime(self):
+    return self.lastUpdate
+   
+  def disconnect(self, cmdStn):
+    if self.locObjID is not None:
+      cmdStn.locomotiveSpeedSet(self.locObjID, 0, 0)
+      cmdStn.locomotiveDisconnect(self.locObjID)
+      
+   
+  def update(self, cmdStn, pkt):
+    if pkt.cmd != 0x53 or len(pkt.data) != 9:  # Not a status update, bump out
+      return
+    if self.debug:
+      print("MRBusThrottle (0x%02X): UPDATE loco %d" % (self.throttleAddr, self.locAddr))
+      
+    addr = pkt.data[0] * 256 + pkt.data[1]
+    if 0 != (addr & 0x8000):
+      self.locAddrLong = False
+      addr = addr & 0x007F
+    else:
+      self.locAddrLong = True
+         
+    speed = pkt.data[2] & 0x7F
+    if 1 == speed:
+      speed = 0
+      estop = 1
+    elif speed > 1:
+      estop = 0
+      speed = speed - 1
+    elif speed == 0:
+      estop = 0
+      
+    if pkt.data[2] & 0x80:
+      direction = 0
+    else:
+      direction = 1
+
+    if addr != self.locAddr or self.locObjID is None:
+      try:
+        self.locObjID = cmdStn.locomotiveObjectGet(addr, self.throttleAddr, self.locAddrLong)
+      except:
+        print("MRBusThrottle (0x%02X) - could not acquire locomotive, will retry" % (self.throttleAddr))
+        return
+      self.locAddr = addr
+      self.locFunctions = None  # We changed locomotives, go get new functions
+      print("MRBusThrottle (0x%02X): Acquiring new locomotive %d - objID = %s" % (self.throttleAddr, self.locAddr, self.locObjID))
+      
+    # Only send ESTOP if we just moved into that state
+    if estop != self.locEStop and estop == 1:
+      print("MRBusThrottle (0x%02X): Set ESTOP loco %d" % (self.throttleAddr, self.locAddr))
+      cmdStn.locomotiveEmergencyStop(self.locObjID)
+
+    self.locEStop = estop
+    if self.locEStop != 1 and (speed != self.locSpeed or direction != self.locDirection):
+      print("MRBusThrottle (0x%02X): Set loco [%d] speed %d %s" % (self.throttleAddr, self.locAddr, speed, ["FWD","REV"][direction]))
+      cmdStn.locomotiveSpeedSet(self.locObjID, speed, direction)
+
+    self.locSpeed = speed
+    self.locDirection = direction
+      
+    # On the first pass, get the function statuses from the command station
+    # The LNWI / WiThrottle support this, others may in the future
+    if self.locFunctions is None:
+      try:
+        self.locFunctions = cmdStn.locomotiveFunctionsGet(self.locObjID)
+        print("MRBusThrottle (0x%02X): Got loco [%d] functions from cmd station\n  [%s]" % (self.throttleAddr, self.locAddr, self.locFunctions))
+        print(self.locFunctions)
+      except Exception as e:
+        print("MRBusThrottle (0x%02X): Exception in locomotiveFunctionsGet() for loco [%d]" % (self.throttleAddr, self.locAddr))
+        print(e)
+        self.locFunctions = [ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ]
+         
+    functions = [ 0,0,0,0,0,0,0,0,0,0,
+                  0,0,0,0,0,0,0,0,0,0,
+                  0,0,0,0,0,0,0,0,0 ]
+      
+    for i in range(29):
+      if i >= 0 and i < 8:
+        if pkt.data[6] & (1<<i):
+          functions[i] = 1
+      elif i >= 8 and i < 16:
+        if pkt.data[5] & (1<<(i-8)):
+          functions[i] = 1
+      elif i >= 16 and i < 24:
+        if pkt.data[4] & (1<<(i-16)):
+          functions[i] = 1
+      elif i >= 24 and i < 29:
+        if pkt.data[3] & (1<<(i-24)):
+          functions[i] = 1
+
+    for i in range(29):
+      if functions[i] != self.locFunctions[i]:
+        print("MRBusThrottle (0x%02X): Set loco [%d] function [%d] to [%d]" % (self.throttleAddr, self.locAddr, i, functions[i]))
+        cmdStn.locomotiveFunctionSet(self.locObjID, i, functions[i])
+
+    self.locFunctions = functions
+    self.lastUpdate = time.monotonic()
+    return
+      
+import adafruit_ssd1306
+import time
+import microcontroller
+import supervisor
+import board
+import neopixel_write
+import digitalio
+import board
+from version import _version_major_, _version_minor_, _version_delta_, _version_git_
+
+WHITE = bytearray([64, 64, 64])
+RED = bytearray([0, 64, 0])
+AMBER = bytearray([32, 64, 0])
+GREEN = bytearray([64, 0, 0])
+OFF = bytearray([0,0,0])
+
+class Screen:
+  def __init__(self):
+    self.display = None
+    self.spinner = 0
+    self.spinnerElements = [ '-', '\\', '|', '/' ]
+    self.displayBuffer = ['                     ', '                     ', '                     ', '                     '] 
+    self.networkText = { 'lnwi':'LNWI', 'esu':'ESU ', 'withrottle':'WTHR' }
+    self.displayWriteBuffer = ['                     ', '                     ', '                     ', '                     '] 
+    self.lastSSID = ''
+    self.debug = False
+
+    self.ledPin = None
+    try:
+      self.ledPin = digitalio.DigitalInOut(board.IO45)
+      self.ledPin.direction = digitalio.Direction.OUTPUT
+    except Exception as e:
+      print("Cannot init LED pin\n%s" % (e))
+      self.ledPin = None
+
+    self.lastLEDColor = None
+
+  def setLED(self, color):
+    if self.lastLEDColor != color:
+      self.lastLEDColor = color
+      if self.ledPin != None:
+        neopixel_write.neopixel_write(self.ledPin, self.lastLEDColor)
+
+  def init(self, i2c):
+    self.display = adafruit_ssd1306.SSD1306_I2C(128, 32, i2c)
+    self.clearScreen()
+    self.setLED(OFF)
+    
+  def clearScreen(self):
+    self.display.fill(0)
+    self.display.show()
+
+  def writeText(self, txtStr, xPos, yPos, clearArea=False):
+    if clearArea:
+      self.display.fill_rect(xPos * 6 + 1, yPos * 8 + 1, len(txtStr) * 7, 8, 0);
+    self.display.text(txtStr, xPos * 6 + 1, yPos * 8 + 1, True)
+    self.display.show()
+
+  def flushBufferedText(self):
+    displayBuffer = self.displayBuffer
+    displayWriteBuffer = self.displayWriteBuffer
+    fill_rect = self.display.fill_rect
+    text = self.display.text
+    
+    for lineNum in range(0,4):
+      if displayBuffer[lineNum] == displayWriteBuffer[lineNum]:
+        continue
+
+      for charNum in range(0,22):
+        if displayWriteBuffer[lineNum][charNum:charNum+1] != displayBuffer[lineNum][charNum:charNum+1]:
+          fill_rect(charNum * 6 + 1, lineNum * 8 + 1, 6, 8, 0);
+          text(displayWriteBuffer[lineNum][charNum:charNum+1], charNum * 6 + 1, lineNum * 8 + 1, True)
+      self.displayBuffer[lineNum] = displayWriteBuffer[lineNum]
+
+    self.display.show()
+
+
+  def writeBufferedText(self, txtStr, xPos, yPos):
+    tmpbuffer = self.displayWriteBuffer[yPos][0:xPos] + txtStr + self.displayWriteBuffer[yPos][xPos + len(txtStr):]
+    self.displayWriteBuffer[yPos] = tmpbuffer
+
+  def status_screen(self, sysState):
+#     000000000011111111112
+#     012345678901234567890
+#  0:[a:LNWI    s T:nn B:aa] a=A/auto, C/config file (LNWI/ESU /WTHR/NONE) s=spinner nn=throttles connected aa=base addr  
+#  1:[SSID-NAME-HERE-HERE-H] (scrolling)
+#  2:[192.168.255.255:ppppp]
+#  3:[R:-sss cc xxC xxxxlps] s=rssi, cc=channel
+    if self.debug:
+      displayUpdateStart = time.monotonic_ns()
+
+    # Update spinner
+    self.spinner = (self.spinner + 1) % len(self.spinnerElements)
+    self.writeBufferedText(self.spinnerElements[self.spinner], 10, 0);
+
+    if supervisor.runtime.serial_connected:
+      self.writeBufferedText('U', 11, 0);
+    else:
+      self.writeBufferedText(' ', 11, 0);
+    # Update throttles connected and base address
+    self.writeBufferedText("T:%02d B:%02d" % (sysState.throttlesConnected, sysState.baseAddr), 12, 0);
+
+    # Update SSID line if we're connected
+    ledColor = RED
+    
+    if not sysState.isWifiConnected:
+      if sysState.isAutoNetwork:
+        newSSIDText = "%-21.21s" % ("(Searching...)")
+      else:
+        newSSIDText = "%-21.21s" % (sysState.networkSSID)
+      ipText = "%-21.21s" % ("(Not Connected)")
+      rssiText = "R:---"
+    else:
+      ledColor = AMBER
+      newSSIDText = "%-21.21s" % (sysState.networkSSID)
+      ipText = "%-21.21s" % (sysState.ipv4)
+      rssiText = "R:%02ddB" % (min(0, max(-99, sysState.rssi)))
+    self.writeBufferedText(newSSIDText, 0, 1);
+    self.writeBufferedText(ipText, 0, 2);
+    self.writeBufferedText(rssiText, 0, 3);
+
+    if sysState.lps < 10000:
+      self.writeBufferedText("%4dl/s" % (sysState.lps), 14, 3)
+    else:
+      self.writeBufferedText("%3dkl/s" % (sysState.lps/1000), 14, 3)
+
+    self.writeBufferedText("%-2d" % (microcontroller.cpu.temperature), 10, 3)
+    self.writeBufferedText("C", 12, 3)
+
+
+    if sysState.isAutoNetwork:
+      self.writeBufferedText("A:", 0, 0);
+    else: 
+      self.writeBufferedText("C:", 0, 0);
+    
+    networkText = "NONE"
+    if sysState.cmdStationType in self.networkText.keys():
+      networkText = self.networkText[sysState.cmdStationType]
+    self.writeBufferedText(networkText, 2, 0)
+    if self.debug:
+      print("Content %d uS" % ((time.monotonic_ns() - displayUpdateStart) / 1000))
+
+    if sysState.isCmdStnConnected:
+      ledColor = GREEN
+
+    self.setLED(ledColor)
+    self.flushBufferedText()
+    if self.debug:
+      print("Flush %d uS" % ((time.monotonic_ns() - displayUpdateStart) / 1000))
+
+  def splash_screen(self, version=""):
+    self.clearScreen()
+    self.writeText("Iowa Scaled", 0, 0)
+    self.writeText("Engineering", 0, 1)
+    self.writeText("MRBW-WIFI  ", 0, 2)
+    self.writeText("%d.%d.%d %6.6s" % (_version_major_, _version_minor_, _version_delta_, _version_git_), 0, 3)
+    logoXOffset = 84
+
+    with open("/ise.lgo", 'rb') as logo:
+      w = int.from_bytes(logo.read(1), "big")
+      h = int.from_bytes(logo.read(1), "big")
+      b = bytearray(logo.read(1 + (w*h // 8)))
+
+      for row in range(0,h):
+        for col in range(0,w):
+          byte = ((row*w) + col) // 8
+          bit = ((row*w) + col) % 8
+          if b[byte] & (1<<bit):
+            self.display.pixel(col+logoXOffset, row, 1)
+      self.display.show()
+import board
+import digitalio
+
+class Switches:
+  def __init__(self):
+    self.currentState = 0
+    self.baseAddr = 0
+    self.init()
+
+  def setAsInput(self, sw):
+    sw.direction = digitalio.Direction.INPUT
+    sw.pull = digitalio.Pull.UP
+
+  def init(self):
+    self.baseAddr16 = digitalio.DigitalInOut(board.IO9)
+    self.setAsInput(self.baseAddr16)
+    
+    self.baseAddr8 = digitalio.DigitalInOut(board.IO10)
+    self.setAsInput(self.baseAddr8)
+    
+    self.baseAddr4 = digitalio.DigitalInOut(board.IO11)
+    self.setAsInput(self.baseAddr4)
+
+    self.baseAddr2 = digitalio.DigitalInOut(board.IO12)
+    self.setAsInput(self.baseAddr2)
+
+    self.baseAddr1 = digitalio.DigitalInOut(board.IO13)
+    self.setAsInput(self.baseAddr1)
+
+    self.switchA = digitalio.DigitalInOut(board.IO14)
+    self.setAsInput(self.switchA)
+
+    self.switchFR = digitalio.DigitalInOut(board.IO21)
+    self.setAsInput(self.switchFR)
+      
+  def getBaseAddr(self):
+    self.baseAddr = (not self.baseAddr16.value) * 16 + (not self.baseAddr8.value) * 8 + (not self.baseAddr4.value) * 4 + (not self.baseAddr2.value) * 2 + (not  self.baseAddr1.value) * 1
+    return self.baseAddr
+
+
+import re
+import wifi
+
+class SystemState:
+  def __init__(self):
+    self.isAutoNetwork = True
+    self.hostName = "mrbw-wifi"
+    self.cmdStationType = None
+    self.networkSSID = ""
+    self.networkPassword = ""
+    self.ipv4 = ""
+    self.throttlesConnected = 0
+    self.baseAddr = 0
+    self.throttleTimeoutSeconds = 60
+    self.statusBroadcastIntervalSeconds = 2
+    self.isWifiConnected = False
+    self.isCmdStnConnected = False
+    self.forceScreenUpdate = False
+    self.cmdStationIP = None
+    self.cmdStationPort = None
+    self.conflictingBaseSeen = 0
+    self.rssi = -100
+    self.lps = 0
+    self.configurationValid = False
+    self.configurationError = "Conf Not Loaded"
+    self.lnwiSSIDMatch = re.compile(r'Dtx\d+-[A-Za-z0-9 ]+_[0-9A-F][0-9A-F][0-9A-F][0-9A-F]-[0-7]')
+    self.dccexSSIDMatch = re.compile(r'DCCEX_[A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9][A-Fa-f0-9]')
+
+
+  def getMrbusBaseAddr(self):
+    return 0xD0 + self.baseAddr
+
+  def getInterfaceVerPktText(self):
+    # General pattern
+    # WF-LNWI
+    # WF-WTHR
+    # WF-ESU
+    # NO WIFI - no wifi
+    # NO CMD  - no command station
+    
+    if not self.isWifiConnected:
+      return [ ord('N'), ord('O'), ord(' '), ord(' '), ord('W'), ord('I'), ord('F'), ord('I') ]
+    elif not self.isCmdStnConnected or self.cmdStationType is None:
+      return [ ord('N'), ord('O'), ord(' '), ord('C'), ord('M'), ord('S'), ord('T'), ord('N') ]
+    elif self.cmdStationType == "lnwi":
+      return [ ord('W'), ord('I'), ord('F'), ord('I'), ord('L'), ord('N'), ord('W'), ord('I') ]
+    elif self.cmdStationType == "withrottle":
+      return [ ord('W'), ord('I'), ord('F'), ord('I'), ord('W'), ord('T'), ord('H'), ord('R') ]
+    elif self.cmdStationType == "esu":
+      return [ ord('W'), ord('I'), ord('F'), ord('I'), ord('E'), ord('S'), ord('U'), ord(' ') ]
+
+    return [ ord('W'), ord('I'), ord('F'), ord('I'), ord('U'), ord('N'), ord('K'), ord('N') ]
+
+  def scanForNetworks(self):
+    # Scan for all possible connnection types    
+    print("Available WiFi networks:")
+    networks = wifi.radio.start_scanning_networks()
+    networks = sorted(networks, key=lambda net: net.rssi, reverse=True)
+    wifi.radio.stop_scanning_networks()
+
+    autonets = []
+
+    for network in networks:
+      print("[%-32.32s] Ch: %2d RSSI: %d Auth: %s" % (str(network.ssid, "utf-8"), network.channel, network.rssi, network.authmode))
+      if (self.cmdStationType is None or self.cmdStationType == 'lnwi') and self.lnwiSSIDMatch.match(network.ssid):
+        autonets.append(('lnwi', network.ssid, ''))
+      
+      elif (self.cmdStationType is None or self.cmdStationType == 'esu') and network.ssid == 'ESUWIFI':
+        autonets.append(('esu', network.ssid, 'cabcontrol'))
+      
+      elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'MRCWi-Fi':
+        autonets.append(('withrottle', network.ssid, ''))
+      
+      elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'RPi-JMRI':
+        if self.cmdStationIP is None:
+          sysState.cmdStationIP = "192.168.6.1"
+        autonets.append(('withrottle', network.ssid, 'rpI-jmri'))
+
+      elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and self.dccexSSIDMatch.match(network.ssid):
+        password = "PASS_" + network.ssid[6:]
+        autonets.append(('withrottle', network.ssid, password))
+        if self.cmdStationIP is None:
+          sysState.cmdStationIP = "192.168.4.1"
+        if self.cmdStationPort is None:
+          sysState.cmdStationPort = 2560
+
+       # If we found an automatic network to connect to, break out
+      if len(autonets):
+        (self.cmdStationType,self.networkSSID,self.networkPassword) = autonets[0]
+        return
+       
+    self.networkSSID = None
+    self.networkPassword = ""
+    return
+
+
+  def readConfigurationFile(self, filename):
+    print("reading file %s" % (filename))
+    jsConf = { }
+
+    try:
+      with open(filename, 'r') as fp:
+        for fline in fp:
+          fline = fline.strip()
+          #Ignore empty lines
+          if len(fline) == 0:
+            continue
+          # Ignore comments
+          if fline[0] == '#':
+            continue
+          kv = fline.split('=', 1)
+          if len(kv) < 2:
+            continue
+          key = kv[0].strip()
+          value = kv[1].strip()
+          
+          if len(key) == 0 or len(value) == 0:
+            continue
+          jsConf[key] = value
+
+      try:
+        for key in jsConf.keys():
+          if key == 'ssid' and len(jsConf['ssid'].strip()) != 0:
+            self.isAutoNetwork = False
+            self.networkSSID = jsConf['ssid']
+
+          elif key == 'password' and len(jsConf['password'].strip()) != 0:
+            self.networkPassword = jsConf['password']
+          
+          elif key == 'mode' and jsConf['mode'] in ['lnwi', 'withrottle', 'esu']:
+            self.cmdStationType = jsConf['mode']
+            if self.cmdStationType == 'lnwi':
+              self.cmdStationPort = 12090
+            elif self.cmdStationType == 'withrottle' and self.cmdStationPort == None:
+              self.cmdStationPort = 12090
+            elif self.cmdStationType == 'esu' and self.cmdStationPort == None:
+              self.cmdStationPort = 15471
+
+          elif key == 'serverPort' and len(jsConf['serverPort'].strip()) != 0:
+            self.cmdStationPort = int(jsConf['serverPort'].strip())
+
+          elif key == 'serverIP' and len(jsConf['serverIP'].strip()) != 0:
+            self.cmdStationIP = jsConf['serverIP'].strip()
+
+
+        # FIXME: If we have a network but we don't have a command station type, force it
+
+
+        # If we get to the end and we don't have an ssid (autonetwork = false), then reset everything
+        if self.isAutoNetwork:
+          self.networkSSID = None
+          self.networkPassword = None
+        
+        self.configurationValid = True
+      except:
+        self.configurationError = "Syntax Error"
+        self.configurationValid = False
+        return
+
+    except Exception as e:
+      self.configurationValid = False
+      self.configurationError = "File Not Found"
+      print(e)
+# *************************************************************************
+# Title:    Client for WiThrottle-based Clients (JMRI, Digitrax LNWI, MRC Wifi)
+# Authors:  Nathan D. Holmes <maverick@drgw.net>
+#           Michael D. Petersen <railfan@drgw.net>
+# File:     withrottle.py
+# License:  GNU General Public License v3
+# 
+# LICENSE:
+#   Copyright (C) 2018 Michael Petersen & Nathan Holmes
+#     
+#   This program is free software; you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation; either version 3 of the License, or
+#   any later version.
+# 
+#   This program is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#   GNU General Public License for more details.
+#
+# DESCRIPTION:
+#   This class provides a client to connect to clients that speak the
+#   JMRI Wifi Throttle (WiThrottle) protocol and close derivatives (Digitrax LNWI)
+# 
+# *************************************************************************
+
+import socketpool
+import time
+
+class WiThrottleConnection:
+  """A client object to talk to a JMRI WiFi Throttle server or compatible.  
+    This class is capable of handling multiple locomotives simultaneously via
+    the multithrottle interface and its ability to multiplex throttles."""
+
+  def __init__(self, socketpool):
+    """Constructor for the object.  Any internal initialization should occur here."""
+    self.socketpool = socketpool
+    self.debug = False
+    self.conn = None
+    self.activeThrottles = { }
+    self.funcStatus = { }
+    self.funcUpdated = { }
+    self.lastUpdate = 0
+    self.recvData = ""
+    self.ip = None
+    self.port = None
+    self.operatingMode = "JMRI"
+    self.version = ""
+    self.trackPowerOn = False
+    self.heartbeatMaxInterval = 10
+    self.serverName = ""
+    self.serverID = ""
+
+
+  def connect(self, ip, port, mode="JMRI", conn=None):
+    """Since the LNWI only understands a subset of Multithrottle commands, open up a single connection
+    to multiplex everything through."""
+    if mode == "JMRI":
+      self.operatingMode = "JMRI"
+    elif mode == "LNWI":
+      self.operatingMode = "LNWI"
+    else:
+      print("Operating Mode [%s] not understood, defaulting to JMRI" % (mode))
+      self.operatingMode = "JMRI"
+
+    print("%s Connect: Connecting to server [%s] port [%d]" % (self.operatingMode, ip, port))
+    self.ip = ip
+    self.port = port
+
+    if conn is not None:
+      self.conn = conn
+      self.conn.settimeout(0)
+    else:
+      self.conn = self.socketpool.socket(socketpool.SocketPool.AF_INET, socketpool.SocketPool.SOCK_STREAM)
+      """Set the socket timeout relatively large for the initial connect since they take awhile"""
+      self.conn.settimeout(5)
+      self.conn.connect((self.ip, self.port))
+      self.conn.settimeout(0)
+
+    self.recvData = ""
+
+    self.rxtx("NProtoThrottle Bridge\n")
+    self.rxtx("HUProtoThrottle Bridge\n")
+    self.activeThrottles = { }
+    print("%s Connect: complete" % (self.operatingMode))
+    """Set the timeout for the socket r/w operations small to prevent blocking too long on receives."""
+    self.conn.settimeout(0)
+
+
+  def disconnect(self):
+    print("%s Disconnect: Shutting down %s interface\n" % (self.operatingMode, self.operatingMode))
+    """Shut down all throttle socket connections and disconnect from the WiThrottle server in a clean way."""
+    for cabID,mtID in self.activeThrottles.items():
+      try:
+        self.rxtx("M%1.1s-*<;>r\n" % (mtID))
+      except:
+        if self.debug:
+          print("In disconnect, write fails, socket must be dead")
+        time.sleep(0.1)
+
+    try:
+      self.rxtx("Q\n")
+    except: 
+      print("Socket probably went away rudely")
+
+    try:
+      self.conn.close()
+    except Exception as e: 
+      print("Socket close error", e)
+
+    self.activeThrottles = { }
+    self.recvData = ""
+    print("%s Disconnect: Disconnected" % (self.operatingMode))
+
+  def rxtx(self, cmdStr):
+    """Internal shared function for transacting with the WiThrottle server."""
+    if cmdStr is not None:
+      self.lastUpdate = time.monotonic()
+      if self.debug:
+        print("%s TX: Sending [%s]" % (self.operatingMode, cmdStr[:-1]))
+      self.conn.send(str.encode(cmdStr))
+      #time.sleep(0.05)
+    try:
+      recvBuffer = bytearray(256)
+      bytesReceived = self.conn.recv_into(recvBuffer, len(recvBuffer))
+      if bytesReceived > 0:
+        self.recvData += recvBuffer[0:bytesReceived].decode()
+        self.parseIncomingData()
+    except:
+      pass
+
+
+
+  def parseIncomingData(self):
+    # If there's no carriage returns, we don't have a complete response of any sort yet
+    if '\n' not in self.recvData:
+      return
+
+    responseStrings = self.recvData.split('\n')
+
+    # If there's trailing unfinished data, put it back in the recieve data queue, otherwise clear it
+    if not self.recvData.endswith('\n'):
+      self.recvData = responseStrings.pop()
+    else:
+      self.recvData = ""
+
+    for resp in responseStrings:
+      # Trim whitespace
+      resp = resp.strip()
+
+      # No length?  Nothing to do
+      if len(resp) == 0:
+        continue
+      if self.debug:
+        print(resp)
+
+      if ('VN' == resp[0:2]):  # Protocol version
+        self.version = resp[2:]
+
+      elif ('RL' == resp[0:2]):  # Roster List, don't care right now
+        pass
+
+      elif ('PPA' == resp[0:3]):  # Track Power
+        if resp[3:4] == '1': # Track power on
+          self.trackPowerOn = True
+        elif resp[3:4] == '0':  # Track power off
+          self.trackPowerOn = False
+        elif resp[3:4] == '2': # Track power unknown - assume the best, on...
+          self.trackPowerOn = True
+
+      elif ('PT' == resp[0:2]):  # Turnout lists, don't care right now
+        pass
+
+      elif ('PR' == resp[0:2]):  # Route lists, don't care right now
+        pass
+
+      elif ('*' == resp[0:1]):  # Heartbeat interval
+        try:
+          self.heartbeatMaxInterval = int(resp[1:])
+        except:
+          self.heartbeatMaxInterval = 10
+
+      elif ('N' == resp[0:1]):  # Host controller name
+        self.serverName = resp[1:]
+
+      elif ('U' == resp[0:1]):  # Host controller name
+        self.serverID = resp[1:]
+
+      elif ('M' == resp[0:1]):  # Some sort of multithrottle response - parse this
+        if self.debug:
+          print("%s RX: Multithrottle update [%s]" % (self.operatingMode, resp))
+
+        try:
+          (throttle,cmd) = resp.split("<;>")
+          if throttle[2:3] == 'S':
+            # we've asked for somebody else's loco - steal it!
+            # The format of this undocumented command appears to be:
+            # MTSLxxxx<;>Lxxxx
+            # And the response to steal it is the same
+            print("%s RX: Cab [%s] needs to steal locomotive [%s]\n" % (self.operatingMode, throttle[1:2], cmd))
+            cmdStr = resp
+            self.conn.send(cmdStr)
+                  
+          elif throttle[2:3] == "A":
+            if cmd[0:1] == 'F':
+              funcNum = int(cmd[2:])
+              funcVal = int(cmd[1:2])
+              self.funcStatus[throttle[1:2]][funcNum] = funcVal
+              if self.debug:
+                print("%s RX: Cab [%s] set func %d to %d " % (self.operatingMode, throttle[1:2], funcNum, funcVal))
+              if funcNum == 28:
+                self.funcUpdated[throttle[1:2]] = True
+        except:
+          print("%s RX: Multithrottle packet exception" % (self.operatingMode))
+               
+      else:
+        print("%s RX: Unknown host->client [%s]\n" % (self.operatingMode, resp))
+
+  def update(self):
+    """This should be called frequently within the main program loop.  This implements the keepalive heartbeat
+       within the WiThrottle protocol."""
+    heartbeatInterval = (self.heartbeatMaxInterval / 2)
+    if heartbeatInterval < 1:
+      heartbeatInterval = 1
+
+    if time.monotonic() > self.lastUpdate + heartbeatInterval:
+      self.rxtx("*\n")
+    else:
+      self.rxtx(None)
+
+  def getAvailableMultithrottleLetter(self):
+    mtLetters = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ012345')
+    usedMTLetters = set(self.activeThrottles.values())
+    mtLetters = mtLetters.difference(usedMTLetters)
+    return mtLetters.pop()
+
+  def locomotiveDisconnect(self, objID):
+    print("%s locomotiveDisconnect(%d): disconnect" % (self.operatingMode, objID['locoNum']))
+    self.rxtx("M%1.1s-*<;>r\n" % (self.activeThrottles[objID['addr']]))
+    del self.activeThrottles[objID['addr']]
+
+  def locomotiveFunctionsGet(self, objID):
+    if self.debug:
+      print("%s locomotiveFunctionsGet(%d)" % (self.operatingMode, objID['locoNum']))
+    throttleLetter = self.activeThrottles[objID['addr']]
+    return self.funcStatus[throttleLetter]
+         
+  def locomotiveEmergencyStop(self, objID):
+    """Issues an emergency stop command to a locomotive handle that has been previously acquired with locomotiveObjectGet()."""
+    if self.debug:
+      print("%s locomotiveEmergencyStop(%d)" % (self.operatingMode, objID['locoNum']))
+    self.rxtx("M%1.1sA*<;>X\n" % self.activeThrottles[objID['addr']])
+
+  def locomotiveObjectGet(self, locoNum, cabID, isLongAddress=True):
+    """Acquires and returns a handle that will be used to control a locomotive address.  This will release
+       any locomotive that cabID was previously controlling."""
+    if self.debug:
+      print("%s locomotiveObjectGet(%d, 0x%02X)" % (self.operatingMode, locoNum, cabID))
+
+    if cabID not in self.activeThrottles:
+      newThrottleLetter = self.getAvailableMultithrottleLetter()
+      self.activeThrottles[cabID] = newThrottleLetter
+      print("%s locomotiveObjectGet: Added throttle letter [%s] for PT cab 0x%02X (loco %d)" % (self.operatingMode, newThrottleLetter, cabID, locoNum))
+
+    objID = {'addr':cabID, 'locoNum':locoNum, 'isLong':isLongAddress }
+
+    self.funcStatus[self.activeThrottles[cabID]] = [0] * 29  # Array of 29 zeros for function status
+    self.funcUpdated[self.activeThrottles[cabID]] = False
+      
+    #Drop anything this cab might have had before.  If nothing, no harm
+    self.rxtx("M%1.1s-*<;>r\n" % (self.activeThrottles[objID['addr']]))
+
+    if objID['isLong']:
+      # Acquire new locomotive at long address
+      self.rxtx("M%1.1s+L%d<;>L%d\n" % (self.activeThrottles[objID['addr']], objID['locoNum'], objID['locoNum']))
+    else:
+      self.rxtx("M%1.1s+S%d<;>S%d\n" % (self.activeThrottles[objID['addr']], objID['locoNum'], objID['locoNum']))
+
+    for i in range(0,50):
+      self.rxtx(None)
+      # Check if we've gotten the function statuses from the command station yet
+      if self.funcUpdated[self.activeThrottles[cabID]] is True:
+        if self.debug:
+          print("%s locomotiveObjectGet: Got func status for [%d] from LNWI" % (self.operatingMode, locoNum))
+        break
+      #time.sleep(0.01)
+
+    # Turn on track power if it's off for some reason
+    if self.trackPowerOn == False:
+      self.rxtx("PPA1\n")
+
+    return objID
+
+
+  # For the purposes of this function, direction of 0=forward, 1=reverse
+  def locomotiveSpeedSet(self, objID, speed, direction=0):
+    """Sets the speed and direction of a locomotive via a handle that has been previously acquired with locomotiveObjectGet().  
+       Speed is 0-127, Direction is 0=forward, 1=reverse."""
+    speed = int(speed)
+    direction = int(direction)
+
+    if self.debug:
+      print("%s locomotiveSpeedSet(%d): set speed %d %s" % (self.operatingMode, objID['locoNum'], speed, ["FWD","REV"][direction]))
+      
+    if direction != 0 and direction != 1:
+      speed = 0
+      direction = 0
+      
+    if speed >= 127 or speed < 0:
+      speed = 0
+
+    self.rxtx("M%1.1sA*<;>V%d\n" % (self.activeThrottles[objID['addr']], speed))
+    # Direction is 0=REV, 1=FWD on WiThrottle
+    self.rxtx("M%1.1sA*<;>R%d\n" % (self.activeThrottles[objID['addr']], [1,0][direction]))
+   
+  def locomotiveFunctionSet(self, objID, funcNum, funcVal):
+    if self.operatingMode == "LNWI":
+      self.locomotiveFunctionSetLNWI(objID, funcNum, funcVal)
+    else:
+      self.locomotiveFunctionSetJMRI(objID, funcNum, funcVal)
+
+  def locomotiveFunctionSetJMRI(self, objID, funcNum, funcVal):
+    funcNum = int(funcNum)
+    funcVal = int(funcVal)
+
+    # Thankfully, JMRI supports the "force function" ('f') command as described in the spec
+    # so we can avoid all the nasties as we have in LNWI mode
+    print("JMRI locomotiveFunctionSet(%d): set func %d to %d" % (objID['locoNum'], funcNum, funcVal))
+    self.rxtx("M%1.1sA*<;>f%d%d\n" % (self.activeThrottles[objID['addr']], funcVal, funcNum))   
+
+  def locomotiveFunctionSetLNWI(self, objID, funcNum, funcVal):
+    """Sets or clears a function on a locomotive via a handle that has been previously acquired with locomotiveObjectGet().  
+       funcNum is 0-28 for DCC, funcVal is 0 or 1."""
+
+    # This is the nasty part.  The LNWI doesn't support the "force function" ('f') command, so we have to do 
+    # weird crap here to actually get the function in the state we want.
+
+    funcNum = int(funcNum)
+    funcVal = int(funcVal)
+
+    if self.debug:
+      print("LNWI locomotiveFunctionSet(%d): set func %d to %d" % (objID['locoNum'], funcNum, funcVal))
+ 
+    if funcNum == 2:  # 2 is non-latching, all others are latching
+       self.rxtx("M%1.1sA*<;>F%d%d\n" % (self.activeThrottles[objID['addr']], funcVal, funcNum))
+    else:
+       if self.funcStatus[ self.activeThrottles[ objID['addr'] ] ] [funcNum] != funcVal:
+         self.rxtx("M%1.1sA*<;>F1%d\n" % (self.activeThrottles[objID['addr']], funcNum) )
+         self.rxtx("M%1.1sA*<;>F0%d\n" % (self.activeThrottles[objID['addr']], funcNum) )
+C ÑP8 (adafruit_framebuf.py``Ä&E(h$$$$dã+ã-ã+õãO 
+1.4.9__version__# __repo__ÄQosÄQstructÄ
+MVLSBÅRGB565ÇGS4_HMSBÉ
+MHMSBÑRGB888T2MHMSBFormat4T2MVLSBFormat4T2RGB888Format4T2FrameBuffer4T2BitmapFont4T2FrameBuffer14Qcs?https://github.com/adafruit/Adafruit_CircuitPython_framebuf.gitÇ!å)@ä	ää
+     î2 4set_pixel î24get_pixel î24fill î24fill_rectQc Å`¿Ä- +&+ ≤∞strideÙ±Úàˆƒá±ÛáÔ≈∞buf¥UÅµ“Ô≥Ä‹µÌ∞¥VQc  framebufxy
+colorÅ 3Ä6 +& ≤∞Ù±Úàˆ√á±ÛáÔƒ∞≥U¥ÒÅÔc  ÅtBÄ= $G"/ ±DÄ"Å¬BÄÄ¬ k∞4ÄBÄW√≤∞≥VÅÂXZ◊CÔYYQc  É Ç	ÄG`)&)++ ±≥Ú±B?ÄW∆á∂ÛáÔ«≤¥Ú≤B&ÄW»∏∞Ù∂Úàˆ…∞πUÅ∑“ÔµÄ‹∑Ì∞πVÅÂXZ◊C‘YYÅÂXZ◊CªYYQc  
+widthheightÇ%åT@ä	ää
+     î2 4 î24 î24 î24Qc ÅX¿ÄX +$+ ≤ÉÒ∞Ù±Úƒ≤áÔ≈∞¥UÅµ“Ô≥Ä‹µÌ∞¥VQc  Å3Äa +$ ≤ÉÒ∞Ù±Ú√≤áÔƒ∞≥U¥ÒÅÔc  ÅtBÄh $G"/ ±DÄ"Å¬BÄÄ¬ k∞4ÄBÄW√≤∞≥VÅÂXZ◊CÔYYQc  ÉÚ 	Är`#+$' -8$ BCÄ≤ÉÒ∞Ù±Ú∆≤áÔ«≥ÄBÄW»∞∂∏ÚUÅ∑“ÔµÄ‹∑Ì∞∂∏ÚVÅÂXZ◊C€YY≤ÅÂ¬¥ÅÊƒ¥ÄÿC∑Qc  Ç%åÅ@ää
+ä     î2 4 î24 î24 î24Qc É»ÄÖ +,T# ≤∞Ù±ÚÉÙƒ a≥ ù4DÄ B≥4∞¥¥ÉÚ.VB%Ä B≥êÒ"ÅÔ≥àÒ"ÅÔ≥"ÅÔ*4∞¥¥ÉÚ.VQc  ÅX;Äê + (+ ≤∞Ù±ÚÉÙ√∞≥Uê∞≥ÅÚUàÌ∞≥ÇÚUÌc  Ç8RÄö 6/ ±êÒ"ÅÔ±àÒ"ÅÔ±"ÅÔ*¬ k∞4ÄBÄW√ B≤4∞≥≥ÉÚ.VÉÂXZ◊CÂYYQc  É$í	Ä°`6))+ µêÒ"ÅÔµàÒ"ÅÔµ"ÅÔ*∆±≥Ú±B3ÄW«≤¥Ú≤B ÄW»∏∞Ù∑ÚÉÙ… B∂4∞ππÉÚ.VÅÂXZ◊C⁄YYÅÂXZ◊C«YYQc  Ö<L#å¨Äåj@m`e e`âe e Öç&Öe ÖsÄ    /Q*S3 property24rotationsetter2422Q*S3
+pixel2
+hline2
+vline2	circleS, Pb3
+rect2line2blit2scrollS, # font_namebÅsizeb3text2
+imageQcsfont5x8.binÑ,∫Ñ* 'Ä¿%%%%%)%(,(,(L( ±∞5≤∞/≥∞/µ∞7Q∞
+_font∞QﬁDÄ≤∞¥/ŸDÄMVLSBFormat4 ∞ TB0Ä¥
+MHMSBŸDÄMHMSBFormat4 ∞ TBÄ¥RGB888ŸDÄRGB888Format4 ∞ TBÄ 7#4eÄ∞_rotationQc  âbuf_formatsinvalid format<	9Ä”  ∞c   âÅ2Äÿ+( ±ÄÅÇÉ*›CÄ 2#4e±∞Qc  âvalsBad rotation setting`*1Ä›  ∞ T∞±6YQc   â
+colorxÚ=Ä·` ∞5±≤≥¥µ	R6ÇYQc   âxyÖ»,
+pixelÄÁ@)%)))))%I>"&-. ∞ÅŸDÄ≤±Z¡¬∞±ÛÅÛ¡∞ÇŸDÄ∞±ÛÅÛ¡∞≤ÛÅÛ¬∞ÉŸDÄ≤±Z¡¬∞≤ÛÅÛ¬±Ä◊CÄ±∞€CÄ≤Ä◊C	Ä≤∞€DÄQc≥QﬁDÄ∞ Tget_pixel∞±≤6c∞ Tset_pixel∞±≤≥6YQc   âxÈ
+hlineÄ˚  ∞±≤≥Å¥R6ÇYQc   âxÈ
+vlineÄˇ  ∞±≤Å≥¥R6ÇYQc   âÜLÒ:circleê@$"""&#........&$$$&$$ ≥ÅÛ≈Ä∆Å«Å»∑≥ÅÛ…BòÄ∞±µÚ≤∂Ú¥6Y∞±∂Ú≤µÚ¥6Y∞±∂Û≤µÚ¥6Y∞±µÛ≤∂Ú¥6Y∞±µÛ≤∂Û¥6Y∞±∂Û≤µÛ¥6Y∞±∂Ú≤µÛ¥6Y∞±µÚ≤∂Û¥6YπÄ⁄DÄ∂ÅÂ∆π∏Â…∏ÇÂ»πÄÿDÄµÅÊ≈∑ÇÂ«π∑≥ÅÛÂ…µ∂€CbQc   âcenter_xcenter_yradiusä@ÇúÄÄ@Hê`)%%)))))%%i &&(()I"11(($[444 ∞#ÅŸDÄ≤±Z¡¬¥≥Z√ƒ∞±Û≥Û¡∞ÇŸDÄ∞±Û≥Û¡∞≤Û¥Û¬∞ÉŸDÄ≤±Z¡¬¥≥Z√ƒ∞≤Û¥Û¬≥Å◊C(Ä¥Å◊C"Ä±≥ÚÄ⁄CÄ≤¥ÚÄ⁄CÄ≤∞€C	Ä±∞€DÄQcmin∞ÅÛ±≥ÚÅÛ4«∞ÅÛ≤¥ÚÅÛ4»max±Ä4¡≤Ä4¬∂DÄ∞ T)∞±≤∑±ÛÅÚ∏≤ÛÅÚµ6YBPÄ∞ T∞±≤∑±ÛÅÚÅµ6Y∞ T∞±≤Å∏≤ÛÅÚµ6Y∞ T∞±∏∑±ÛÅÚÅµ6Y∞ T∞∑≤Å∏≤ÛÅÚµ6YQc   â!Üä<lineêD ))%,,&%#*$&$$M%#*$&$$*  9≥±Û4∆ 9¥≤Û4«±≤Z»…±≥ÿDÄBÄÅ ≤¥ÿDÄBÄÅÀ∂∑ÿD1Ä∂#˜ÃB Ä∞!∏πµ6Yº∑ÊÃºÄ◊DÄπªÂ…º∂ÂÃ∏∫Â»∏≥‹C⁄B.Ä∑#˜ÃB Ä∞∏πµ6Yº∂ÊÃºÄ◊DÄ∏∫Â»º∑ÂÃπªÂ…π¥‹C⁄∞∏πµ6YQc  âx_0y_0x_1y_1f2.0f2.0H	blitê_   /4 eQc   âÑp£8scrollêc &"'E'$"&"'E'$"#"#*S* ±Ä◊DÄÄ√∞±ÚƒÅ≈BÄ∞ÅÛ√±ÅÛƒ≈≤Ä◊DÄÄ∆∞≤Ú«Å»BÄ∞ÅÛ∆≤ÅÛ«»B0Ä≥…B!Ä∞ T5∞π∂∞ T7∞π±Û∂≤Û66YπµÂ…π¥‹CŸ∂∏Â∆∂∑‹C Qc   âdelta_xdelta_yÜ@˘îàÄ@4textê`@%%,E.S*((.* *&*F7 ∞«∞»∞/ÅÉ*›DÄ∏∑Z«»± ë 6_KÜ …∞
+_fontDÄ∞font_nameµ‹D
+ÄBitmapFontµ4∞∞font_width ∞font_heightÀenumerateπ4_KE 0ÃÕ≤º∫ÅÚÙ∂ÙÚŒæ∫∂ÙÚÄÿD*Äæ∑◊D$Ä≥ª∂ÙÚÄÿDÄ≥∏◊DÄ∞draw_charΩæ≥∞¥size∂6ÇYB∏≥ª∂ÙÂ√BwQc   âstring;;-â¢:
+image!êù`%%,E:(?H(,#l@G/Q''+2) ∞!¬∞!√∞!ÅÉ*›DÄ≥≤Z¬√ a∞ TRGB888Format4DÄ±modeRGB‹DÄ 7#4e a∞ TMHMSBFormatMVLSBFormat*4DÄ±1‹DÄ 7#4e±0ƒ≈¥≤‹CÄµ≥‹DÄ 7# T≤≥64e±load6 ∆ k∞buf4ÄBÄW«Ä∞∑VÅÂXZ◊CÔYY≤ÄBHÄW»≥ÄB7ÄW…±	ŸDÄ∞
+pixel∏π∂∏π*U6YBÄ∂∏π*UDÄ∞∏πÅ6YB ÄÅÂXZ◊C√YYÅÂXZ◊C≤YYQc  âimgsImage must be in mode RGB.sImage must be in mode 1.s3Image must be same dimensions as display ({0}x{1}).Ç(&5ú√` äe e@e â    # *S3 2deinit2 2 Å*S3/2#Qcsfont5x8.binÑ\æ$ 	ê“e ##M_9V)m  ±∞'HU  v∞rb4∞3structunpackBB∞ }Ç660∞?∞?Ç"Ç ∞ÙÚosstat±6ÜU‹D
+Ä 2#±Ú4eJ# W 0ﬂDÄY {#±4YdJ W 1ﬂDÄYJ ]Qc  âsInvalid font file: sCould not find font fileXêÁ  ∞ G6 YQc   âP êÎ ' ∞ 6 Y∞c   âP® ê  ∞6 YQc   âexception_typeexception_valuetracebackÖ0ß&!êˆ h`J9#EHJ($ max∂Å4∆∞ÄB|ÄW«∞seekÇ w±4∞ÙÚ∑Ú6YH !!B∞ }Å66ÄU»J W 2ﬂDÄY@5ÄJ ]∞!ÄB ÄW…∏πÒÅÔDÄ¥fill_rect≤∑∂ÙÚ≥π∂ÙÚ∂∂µ6YÅÂXZ◊C⁄YYÅÂXZ◊C~YYQc   âcharxyframebuffer
+colorsize`"5!†   k±4∞ÅÚÙc   âtext\ FrameBuffer1¨    Qc  C äX,Z &adafruit_ssd1306.py` Ä	H0Y#TLC0(TD&e&&&&$$$&&&&&&&&&&fqÄùéE ÄQtimeÄ H* s H HYÄi2c_devicespi_device*&adafruit_bus_deviceYH ÄQframebufJ W &ﬂDÄYÄQ"adafruit_framebufJ ]H# ÄOptional*typingYÄQ
+busioÄQdigitalioJ W &ﬂDÄYJ ]2.12.4__version__# __repo__"ÅSET_CONTRAST"Å$SET_ENTIRE_ON"Å&SET_NORM_INV"Å.SET_DISP†SET_MEM_ADDR°SET_COL_ADDR¢SET_PAGE_ADDR"Ä@&SET_DISP_START_LINE"Å SET_SEG_REMAP"Å(SET_MUX_RATIO"Å-SET_IREF_SELECT"Å@SET_COM_OUT_DIR"ÅSSET_DISP_OFFSET"ÅZSET_COM_PIN_CFG"ÅU SET_DISP_CLK_DIV"ÅYSET_PRECHARGE"Å[SET_VCOM_DESEL"ÅSET_CHARGE_PUMPT2_SSD13065FrameBuffer4T2SSD1306_I2C4T2SSD1306_SPI4Qcs>https://github.com/adafruit/Adafruit_CircuitPython_SSD1306.gitÉ,9&adafruit_ssd1306.pyå8`á'j@Ö4e@e@e Öe e Ö     ∞   property24
+power2init_display2poweroff2contrast2invert2rotate2write_framebuf2write_cmd2	poweron2
+show∞c Ü$·å6 ÄE/%%E%%'/j e',)*,Q%E'  ö% ± ≤≥¥6Y≥±
+width¥±heightµ±external_vcc∂±reset_pin∑±page_addressing±DÄ± switch_to_output ¢Ä6Ç Y±	àˆ±
+pagesP±_power±D<Ä @≥ÅÚ4±pagebuffer"Ä@±ÄV @Ç4±"page_column_start±†¯±ÄVê±†ˆÚ±ÅVB
+ÄQ±Q±±6 Y±'6 YQc    âbuffer
+reset<	-Äd  ∞c   âÖd·0ÄhÄd  u`p@|@àv+( "Å.†∞	DÄêBÄÄ"Ä@"Å!"Å(∞ÅÛ"ÅH"ÅSÄ"ÅZ∞Ç∞ÙÿDÄÇBÄí"ÅU"Å "ÅY∞DÄ¢BÄ"Åq"Å["0"Å"Å"Å$"Å&"Å-"0"Å∞DÄêBÄî"Å/*_K ¡∞#±6YBÒ∞fillÄ6Y∞%6 YQc   âp/Äú * ∞	"Å.6YP∞Qc   â|"/Ä° * ∞"Å6Y∞±6YQc   âh2/Ä¶  ∞"Å&±ÅÔÌ6YQc   âÅ,2/Ä™ 0 ∞"Å@±ÅÔÉÌ6Y∞"Å ±ÅÔÌ6YQc   â@	/Ä±   /eQc   â@Äµ   /eQc   âcmdÉ 'Äπ '(+(+(+* ∞1D9ÄÅ∞ ¢time
+sleep#6YÄ∞ ¢#6YÅ∞ ¢#6Y∞"Å/6YR∞Qc  âf0.001f0.01f0.01Ñ9*Ä≈ '"'K+$$(((((- ∞%C\ÄÄ¡∞%ÅÛ¬∞"Å ‹DÄ"Å ∞ÛÇˆ√±≥Â¡≤≥Â¬∞°6Y∞±6Y∞≤6Y∞¢6Y∞Ä6Y∞∞3ÅÛ6Y∞6 YQc   âÇ  =åÿÄÄÖ     S, "<addrbP)bQ1bPb∞!  22∞c Ñ ôîÄà@" ÄÓ.%%j`0)){@ i2c_deviceI2CDevice¥µ6±µ±∏± @Ç4±temp @≥àˆ≤ÙÅÚ4±9"Ä@±ÄV ö% ± memoryview±4ÅQ.U≤≥∂∑±6ÜYQc    â7i2cÅ`6ê )'( "Å ∞ÄV±∞ÅV∞G Y∞ §∞6YQ\]Qc   â/Ö8M$	ê
+@'*,--$^(^( ∞DxÄ∞#ÄBeÄW¡∞"Å0±Ú6Y∞∞?ÄU6Y∞∞ÅU6Y∞Å∞±ÙÚÅ∞±ÅÚÙÚ.U∞pagebufferÅQ.V∞G Y∞ §∞6YQ\]ÅÂXZ◊CïYYBÄ∞G Y∞ §∞6YQ\]Qc   âÇ@ SSD1306_SPIúÄà%e`     S, Pb"ÉË§ baudratebÄpolaritybÄ
+phasebPb∞!  22∞c Ñd∏òÑà@& ê9%'#e),{%.)v@ º±±DÄ /#4e"ÖÄÄ ±rateµ switch_to_output ¢Ä6Ç Yspi_deviceSPIDevice¥∑π∫ª6Ü±	µ±dc_pin @≥àˆ≤Ù4± ö% ± 5±4≤≥∏/∂±6ÜYQc   â'5spidccss;Page addressing mode with SPI has not yet been implemented.Å@F)'êP (( Ä∞ ¢∞!G ¬≤ § @±+46YQ\]Qc   â5Å05+	êV (( Å∞	 ¢∞	G ¡± §∞#6YQ\]Qc   â     >[O[>>kOk>>|><~<W}W^^ < ˇÁ√Áˇ $ ˇÁ€Áˇ0H:&)y)&@@%?Z<Á<Z>>""__ __	 fâïj`````î¢ˇ¢î~ ~ **08>80>       _     $**#db6IV P   "A  A" **> Äp0   ``  >QIE> B@ rIIIF!AIM3'EEE9<JII1A!	6III6FII)     @4   "A A"Y	>A]YN||III6>AAA"AAA>IIIA			>AAQs AA  @A?"A@@@@>AAA>			>AQ!^	)F&III2?@@@? @ ?@8@?ccxaYIMC AAA  AAA@@@@@   TTx@(DD88DDD(8DD(8TTT ~	§§úxx D}@  @@= (D  A@ |xx|x8DDD8¸$$$$¸|HTTT$?D$<@@ | @ <@0@<D((DLêêê|DdTLD 6A   w   A6 <&#&<°°a:@@ z8TTUY!UUyA"TTxB!UTx@ TUy@Rr9UUUY9TTTY9UTTX  E|A E}B E|@}}(%(|TUE  TT|T|
+	I2III2:DDD:2JHH0:AA!z:B@ x ù††}=BBB==@@@=<$ˇ$$H~ICf+/¸/+ˇ	)ˆ ¿à~	 TTyA  D}A0HHJ28@@"z z
+
+r}1}&))/(&)))&0HM@ 88/»¨∫/(4˙  {  *""*U U U™U™U™ˇUˇUˇ   ˇ ˇ ˇ ˇ ˇ¸ ˜ ˇ  ˇ ˇÙ¸        ˇˇ   ˇ  ˇ ˇ    ¸ÙÙÙ  ˇ ˜˜ ˜Ù        ¸  ˇˇˇ    ˇˇˇˇˇˇˇˇ     ˇˇ8DD8D¸JJJ4~~~cUIAc8DD<@~  ~ô•Á•ô*I*LrrL0JMM00HxH0ºbZF=>III ~~*****DD_DD@QJD@@DJQ@  ˇ‡Äˇ  kk66$6	      0@ˇ   <<<<     
