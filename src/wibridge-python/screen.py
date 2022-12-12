@@ -57,23 +57,21 @@ class Screen:
     self.display.show()
 
   def flushBufferedText(self):
+    displayBuffer = self.displayBuffer
+    displayWriteBuffer = self.displayWriteBuffer
+    fill_rect = self.display.fill_rect
+    text = self.display.text
+    
     for lineNum in range(0,4):
-      if self.displayBuffer[lineNum] == self.displayWriteBuffer[lineNum]:
+      if displayBuffer[lineNum] == displayWriteBuffer[lineNum]:
         continue
+
       for charNum in range(0,22):
-        if self.displayWriteBuffer[lineNum][charNum:charNum+1] != self.displayBuffer[lineNum][charNum:charNum+1]:
-          self.display.fill_rect(charNum * 6 + 1, lineNum * 8 + 1, 6, 8, 0);
-          self.display.text(self.displayWriteBuffer[lineNum][charNum:charNum+1], charNum * 6 + 1, lineNum * 8 + 1, True)
+        if displayWriteBuffer[lineNum][charNum:charNum+1] != displayBuffer[lineNum][charNum:charNum+1]:
+          fill_rect(charNum * 6 + 1, lineNum * 8 + 1, 6, 8, 0);
+          text(displayWriteBuffer[lineNum][charNum:charNum+1], charNum * 6 + 1, lineNum * 8 + 1, True)
+      self.displayBuffer[lineNum] = displayWriteBuffer[lineNum]
 
-    for lineNum in range(0,4):
-      self.displayBuffer[lineNum] = self.displayWriteBuffer[lineNum]
-    self.display.show()
-
-  def flushBufferedText_slow(self):
-    self.display.fill(0)
-    for lineNum in range(0,4):
-      self.display.text(self.displayWriteBuffer[lineNum], 0, lineNum * 8 + 1, True)
-      self.displayBuffer[lineNum] = self.displayWriteBuffer[lineNum]
     self.display.show()
 
 
@@ -99,16 +97,8 @@ class Screen:
       self.writeBufferedText('U', 11, 0);
     else:
       self.writeBufferedText(' ', 11, 0);
-      
-    baseIndicator = ' B'
-    if sysState.conflictingBaseSeen != 0 and time.monotonic() - sysState.conflictingBaseSeen < 5:
-      baseIndicator = '!!'
-    else:
-      sysState.conflictingBaseSeen = 0
-      
     # Update throttles connected and base address
-    self.writeBufferedText("T:%02d%2.2s:%02d" % (sysState.throttlesConnected, baseIndicator, sysState.baseAddr), 12, 0);
-
+    self.writeBufferedText("T:%02d B:%02d" % (sysState.throttlesConnected, sysState.baseAddr), 12, 0);
 
     # Update SSID line if we're connected
     ledColor = RED
