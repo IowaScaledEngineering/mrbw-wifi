@@ -3,9 +3,6 @@
 MRBW_WIFI_REPO="git@github.com:IowaScaledEngineering/mrbw-wifi"
 TMPDIR=`mktemp -d`
 
-VERSION_STR=`echo "mrbwwifi-$1_$2_$3"`
-
-
 print_help()
 {
         echo "make-firmware-package.sh help"
@@ -25,16 +22,16 @@ if [[ `echo $1 | sed 's/^[1-9]$//' | wc -c` -eq 0 ]] ; then
         echo "Fail - major version ($1) not valid, must be 5-9"
         exit
 fi
-if [[ `echo $1 | sed 's/^[0-9]$//' | wc -c` -eq 0 ]] ; then
-        echo "Fail - minor version ($1) not valid, must be 0-9"
+if [[ `echo $2 | sed 's/^[0-9]$//' | wc -c` -eq 0 ]] ; then
+        echo "Fail - minor version ($2) not valid, must be 0-9"
         exit
 fi
-if [[ `echo $1 | sed 's/^[0-9]$//' | wc -c` -eq 0 ]] ; then
-        echo "Fail - delta version ($1) not valid, must be 0-9"
+if [[ `echo $3 | sed 's/^[0-9]$//' | wc -c` -eq 0 ]] ; then
+        echo "Fail - delta version ($3) not valid, must be 0-9"
         exit
 fi
 
-
+VERSION_STR=`echo "mrbwwifi-$1_$2_$3"`
 
 echo "**** DANGER! DANGER! DANGER, WILL ROBINSON! ****"
 echo " You're about to tag MRBW-WIFI with version $VERSION_STR"
@@ -58,6 +55,8 @@ if [[ `grep $VERSION_STR ../tag-log | wc -c` -ne 0 ]] ; then
         exit 1
 fi
 
+git tag -a $VERSION_STR -m "$VERSION_STR"
+
 GIT_VER=`git rev-parse HEAD`
 
 cp src/wibridge-python/version.py ../temp-version.py
@@ -69,12 +68,19 @@ sed -e 's/^_version_git_ .*/_version_git_ = "'$GIT_VER'"/' < ../temp-version4.py
 git add src/wibridge-python/version.py
 
 BIN_FILENAME="mrbwwifi-$1_$2_$3.bin"
+H_FILENAME="mrbwwifi-init-$1_$2_$3.h"
 
 cd src/firmware-builder
 python3 firmware-builder.py ../wibridge-python/ ../releases/$BIN_FILENAME $1 $2 $3 $GITVER
-git add ../releases/$BIN_FILENAME
-cd ../..
+cd ..
+python3 ./make-header.py
+cp mrbwwifi-init.h releases/$H_FILENAME
 
-git commit -m "Automatically generating $BIN_FILENAME"
+# Making complete, add to git
+
+git add releases/$BIN_FILENAME
+git add releases/$H_FILENAME
+git commit -m "Automatically generating $BIN_FILENAME and $H_FILENAME"
 git push
+git push origin $VERSION_STR
 
