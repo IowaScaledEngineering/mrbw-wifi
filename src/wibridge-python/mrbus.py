@@ -63,94 +63,133 @@ def mrbusCRC16Calculate(data):
 
 class mrbus(object):
   def disconnect(self):
-     self.mrbs.disconnect()
+    pass
 
   def __init__(self, addr, serialPort):
-    self.rxBuffer = []
-    self.rxExcapeNext = False
-    self.rxProcessing = False
+    self.rxBuffer = b''
     self.addr=addr
-    self.pktlst=[]
-    self.handlern=0
-    self.handlers=[]
     self.serial = serialPort
     self.debug = False
 
-  def getpkt(self):
-    rxBuffer = self.rxBuffer
-    rxExcapeNext = self.rxExcapeNext
+  def bytesToString(self, pktBuffer):
+    ret = ""
+    for c in pktBuffer:
+      ret += "%02X " % (c)
+    return ret
+
+  def bytesToPacket(self, pktBuffer):
+    debug = self.debug
+    unescapedBuffer = [ ]
+    rxEscapeNext = False
+    rxProcessing = False
+    rxExpectedPktLen = 255
     
-  
-    while True:
-      incomingBytes = self.serial.read(1)
-      if incomingBytes is None:
-        break  # No packet to return
-
-      # Convert our incoming byte to something useful - an int
-      incomingByte = incomingBytes[0] #int.from_bytes(incomingByte, "big")
-
-      if self.debug:
-        print("mrbee got byte [0x%02x]" % incomingByte)
+    if debug:
+      print("bytesToPacket = [%s]" % (self.bytesToString(pktBuffer)))
+    
+    for incomingByte in pktBuffer:
+      #if self.debug:
+      #  print("mrbee got byte [0x%02x]" % incomingByte)
 
       if 0x7E == incomingByte:
-        if self.debug:
+        if debug:
           print("mrbee starting new packet")
-        self.rxBuffer = [ incomingByte ]
-        self.rxExcapeNext = False
-        self.rxProcessing = True
-        self.rxExpectedPktLen = 255
+        unescapedBuffer = [ 0x7E ]
+        rxEscapeNext = False
+        rxProcessing = True
+        rxExpectedPktLen = 255
         
       elif 0x7D == incomingByte:
-        if self.debug:
+        if debug:
           print("mrbee setting escape")
-        self.rxExcapeNext = True
+        rxEscapeNext = True
      
       else:
-        if not self.rxProcessing:
-          if self.debug:
+        if not rxProcessing:
+          if debug:
             print("mrbee got byte %02X outside processing, ignoring\n" % (incomingByte))
+          pktBuffer = pktBuffer[1:] # Just chew off the first byte and try again
           continue
-     
-        if self.rxExcapeNext:
+
+        if rxEscapeNext:
           incomingByte = incomingByte ^ 0x20
-          self.rxExcapeNext = 0
+          rxEscapeNext = False
 
-        self.rxBuffer.append(incomingByte)
-  
-        if len(self.rxBuffer) == 3:
-          self.rxExpectedPktLen = self.rxBuffer[1] * 256 + self.rxBuffer[2] + 4
+        unescapedBuffer.append(incomingByte)
+        if len(unescapedBuffer) == 3:
+          rxExpectedPktLen = unescapedBuffer[1] * 256 + unescapedBuffer[2] + 4
 
-        if len(self.rxBuffer) == self.rxExpectedPktLen:
-          #self.logger.debug("mrbee - think we may have a packet")                 
+        if len(unescapedBuffer) == rxExpectedPktLen:
           pktChecksum = 0
-          for i in range(3, self.rxExpectedPktLen):
-            pktChecksum = (pktChecksum + self.rxBuffer[i]) & 0xFF
-                             
+          for i in range(3, rxExpectedPktLen):
+            pktChecksum = (pktChecksum + unescapedBuffer[i]) & 0xFF
+
           if 0xFF != pktChecksum:
             # Error, conintue
-            if self.debug:
+            if debug:
               print("mrbee - checksum error - checksum is %02X" % (pktChecksum))
+            return None
+
+          if debug:
+            print("mrbee - valid packet checksum is %02X" % (pktChecksum))
 
           pktDataOffset = 0
-
-          if 0x80 == self.rxBuffer[3]:
+          if 0x80 == unescapedBuffer[3]:
             # 16 bit addressing
             pktDataOffset = 14
-          elif 0x81 == self.rxBuffer[3]:
+          elif 0x81 == unescapedBuffer[3]:
             # 64 bit addressing
             pktDataOffset = 8
           else:
             # Some other API frame, just dump it
-            self.rxBuffer = [ ]
-            self.rxExcapeNext = False
-            self.rxProcessing = False
+            return None
           
-          if 0 != pktDataOffset:
-            retPacket = packet(self.rxBuffer[pktDataOffset + 0], self.rxBuffer[pktDataOffset + 1], self.rxBuffer[pktDataOffset + 5], self.rxBuffer[(pktDataOffset + 6):-1])
-            return retPacket
-
+          retPacket = packet(unescapedBuffer[pktDataOffset + 0], unescapedBuffer[pktDataOffset + 1], unescapedBuffer[pktDataOffset + 5], unescapedBuffer[(pktDataOffset + 6):-1])
+          return retPacket
     return None
+  
+  def byteSplit(self, rxBuffer):
+    retArray = []
+    buildBuffer = []
+    for b in rxBuffer:
+      if b == 0x7E:
+        if len(buildBuffer):
+          retArray.append(bytes(buildBuffer))
+        buildBuffer = []
+      buildBuffer.append(b)
 
+    if len(buildBuffer):
+      retArray.append(bytes(buildBuffer))
+    
+    return retArray
+
+  def getpkt(self):
+    retPkts = []
+    # If there's no new data, then we processed everything we could last time
+    # Just bail
+    c = self.serial.read(self.serial.in_waiting)
+    if c == None or 0 == len(c):
+      return retPkts
+
+    # Append new data to last time's leftovers
+    rxBuffer = self.rxBuffer + c
+
+    # Split based on 0x7E start character
+    potentialPkts = self.byteSplit(rxBuffer)
+
+    rxBuffer = b''
+    for pktBuffer in potentialPkts:
+      pkt = self.bytesToPacket(pktBuffer)
+      if pkt is not None:
+        retPkts.append(pkt)
+        rxBuffer = b''
+      else:
+        rxBuffer = pktBuffer
+
+    if self.debug and len(self.rxBuffer) != 0:
+      print("Leftovers = [%s], pkts=%d" % (self.bytesToString(rxBuffer), len(retPkts)))
+    self.rxBuffer = rxBuffer
+    return retPkts
 
   def sendpkt(self, dest, data, src=None):
      if src == None:

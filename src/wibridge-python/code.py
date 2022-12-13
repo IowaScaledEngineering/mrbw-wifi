@@ -16,6 +16,8 @@ import MRBusThrottle
 from switches import Switches
 from screen import Screen
 from systemstate import SystemState
+from microcontroller import watchdog
+from watchdog import WatchDogMode
 
 import gc
 
@@ -25,9 +27,15 @@ print("Initial memory %d" % (gc.mem_free()))
 debug = False
 
 uart = busio.UART(board.IO17, board.IO18, baudrate=115200, timeout=0, receiver_buffer_size = 1024)
+uart.reset_input_buffer()
 i2c = busio.I2C(board.SCL, board.SDA, frequency=400000)
 dipSwitches = Switches()
 mrbee = mrbus.mrbus(0x03, uart)
+
+watchdog.timeout = 30
+watchdog.mode = WatchDogMode.RESET
+watchdog.feed()
+
 
 screen = Screen()
 screen.init(i2c)
@@ -71,18 +79,6 @@ lastpkt = time.monotonic()
 
 print("My MAC addr:", [hex(i) for i in wifi.radio.mac_address])
 
-
-#print("Connecting to %s"%secrets["ssid"])
-#wifi.radio.connect(secrets["ssid"], secrets["password"])
-#print("Connected to %s!"%secrets["ssid"])
-#print("My IP address is", wifi.radio.ipv4_address)
-
-#ipv4 = "%s" % (wifi.radio.ipv4_address)
-
-#write_text(display, "NT:" + secrets["ssid"], 0, 0)
-#write_text(display, "IP:" + ipv4, 0, 1)
-
-
 loopCnt = 0
 displayUpdateTime = 0
 throttles = { }
@@ -111,30 +107,15 @@ def serverFind(pool, timeout, port):
 
   return None
 
-def rxtx(conn):
-  recvBuffer = bytearray(256)
-  # If we have a command, send it
-  cmdStr = "get(1,info)"
-  print("ESU TX: Sending [%s]" % (cmdStr))
-  conn.send(str.encode(cmdStr))
-  
-  while True:
-    try:
-      bytesReceived = conn.recv_into(recvBuffer, len(recvBuffer))
-      print("ESU RX: %d [%s]" % (bytesReceived, recvBuffer[0:bytesReceived].decode()))
-    except Exception as e:
-      print("RXTX: ", e)
-      time.sleep(0.2)
-
 while True:
   loopCnt += 1
+  watchdog.feed()
   currentTime = time.monotonic()
-  
-  showTimeDiag = False
   # Housekeeping Tasks - Run on a Schedule
   
   # Every second, update the screen
   if sysState.forceScreenUpdate or currentTime > lastLoopUpdate + 1:
+    gc.collect()  # Not sure why, but it seems to be less crashy if the gc runs regularly rather than on demand
     sysState.lps = loopCnt / (currentTime - lastLoopUpdate)
     sysState.throttlesConnected = len(throttles)
     lastLoopUpdate = currentTime
@@ -145,7 +126,6 @@ while True:
     mrbee.addr = sysState.getMrbusBaseAddr()
     
     screen.status_screen(sysState)
-    showTimeDiag = False
     loopCnt = 0
     sysState.forceScreenUpdate = False
 
@@ -156,9 +136,6 @@ while True:
     statusPacket = [ ord('v'), 0x80, gitver[2], gitver[1], gitver[0], 1, 0 ] + sysState.getInterfaceVerPktText()
     mrbee.sendpkt(0xFF, statusPacket)
     lastStatusTime = currentTime
-
-  if showTimeDiag:
-    loopStartTime = time.monotonic_ns()
 
   # If we don't have a wifi connection, the first order of business is to get one
   if not sysState.isWifiConnected:
@@ -179,7 +156,7 @@ while True:
         wifi.radio.connect(sysState.networkSSID)
       else:
         wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
-#      wifi.radio.connect(sysState.networkSSID, sysState.networkPassword)
+
       pool = socketpool.SocketPool(wifi.radio)
       print("My IP address is", wifi.radio.ipv4_address)
       print("My gateway is", wifi.radio.ipv4_gateway)
@@ -203,7 +180,6 @@ while True:
   # At this point, wifi is good, see if we need to build the command station connection
 
   if not sysState.isCmdStnConnected:
-    # FIXME: Do an IP scan if we don't have an IP
     openSocket = None
     cmdStationIP = sysState.cmdStationIP
     cmdStationPort = sysState.cmdStationPort
@@ -311,13 +287,14 @@ while True:
     continue
 
 
-  pkt = mrbee.getpkt()
-  
-  if pkt is not None:
-    #print("Got packet from [0x%02X]" % (pkt.src))
+  pktlist = mrbee.getpkt()
+  for pkt in pktlist:
+    if debug:
+      if pkt.cmd == 0x53 and len(pkt.data) == 9 and sysState.getMrbusBaseAddr() == pkt.dest:
+        print("Got packet %s" % (pkt))
+    
     if pkt.src == sysState.getMrbusBaseAddr():
-      print("Conflicting ProtoThrottle base station detected!!!\nTurning Error LED on\n")
-      errorLightOn = True
+      sysState.conflictingBaseSeen = time.monotonic()
 
     # If this looks like a throttle packet, do something with it
     if pkt.cmd == 0x53 and len(pkt.data) == 9 and sysState.getMrbusBaseAddr() == pkt.dest:
