@@ -66,7 +66,7 @@ class SystemState:
         autonets.append(('lnwi', network.ssid, ''))
       
       elif (self.cmdStationType is None or self.cmdStationType == 'esu') and network.ssid == 'ESUWIFI':
-        autonets.append(('esu', network.ssid, 'cabcontrol'))
+        autonets.append(('esu', network.ssid, '123456789'))
       
       elif (self.cmdStationType is None or self.cmdStationType == 'withrottle') and network.ssid == 'MRCWi-Fi':
         autonets.append(('withrottle', network.ssid, ''))
