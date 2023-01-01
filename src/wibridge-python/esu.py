@@ -172,9 +172,11 @@ class ESUConnection:
                 print("Unsolicited line [%s]" % (line))
             else:
               if len(line) > 10 and line[0:4] == "<END":
-                (e1, errCode, errTxt) = line[1:-1].split(' ')
-                #print("Found end line [%s]" % (line))
-                haveReply = True
+                endIdx = line.find('>', 4)
+                if -1 != endIdx:
+                  (e1, errCode, errTxt) = line[1:endIdx].split(' ')
+                  print("Found end line [%s]" % (line))
+                  haveReply = True
               else:
                 replyLines.append(line)
 
