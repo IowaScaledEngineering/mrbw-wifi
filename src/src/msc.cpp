@@ -29,7 +29,7 @@ static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t 
   // 512 byte blocks for maximum compatibility.  So we need to do erases and writes aligned to 4k boundaries
   // while accepting all sorts of unaligned writes coming in from the USB MSC layer
   uint32_t bytesWritten = 0;
-  
+
   // currentFlashBase is the base address of the current flash block we're working with
   //   It must be aligned to FLASH_BLOCK_SIZE increments
   // workingOffset is the offset into the write buffer we're currently working
@@ -42,11 +42,11 @@ static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t 
       startingOffset = actualOffset - currentFlashBase;
 
     uint32_t bytesToCopy = min(bufsize - bytesWritten, FLASH_BLOCK_SIZE - startingOffset);
-    
+
     //HWSerial.printf("MSC WRITE: currentFlashBase=%u actualOffset=%u bufsize=%u, bytesWritten=%u\r\n", currentFlashBase, actualOffset, bufsize, bytesWritten);
 
     esp_partition_read(p, currentFlashBase, cache, FLASH_BLOCK_SIZE);
-    
+
     //HWSerial.printf("MSC WRITE: memcpy startingOffset=%u, bytesWritten=%u bytesToCopy=%u\r\n", startingOffset, bytesWritten, bytesToCopy);
     memcpy(cache + startingOffset, buffer + bytesWritten, bytesToCopy);
 
@@ -58,10 +58,9 @@ static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t 
     //HWSerial.printf("MSC WRITE: write returned %s\r\n", esp_err_to_name(err));
     bytesWritten += bytesToCopy;
   }
-  
   free(cache);
 
-  return bytesWritten;
+return bytesWritten;
 }
 
 static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufsize)
