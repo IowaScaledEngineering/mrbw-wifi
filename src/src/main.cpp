@@ -5,6 +5,7 @@
 
 // Include drivers for MRBW-WIFI hardware
 #include "versions.h"
+#include "systemState.h"
 #include "switches.h"
 #include "msc.h"
 #include "display.h"
@@ -17,6 +18,7 @@
 ISE_MSC msc;
 I2CDisplay display;
 Switches switches;
+SystemState systemState;
 
 typedef enum 
 {
@@ -38,21 +40,46 @@ void setup()
   Wire.setClock(400000UL);
   Wire.begin();
   ws2812Set(0x0f0000);
+
+  // Try to mount the FFat partition, format if it can't find it
+  systemState.isFSConnected = FFat.begin(true);
+
+  // See if we have a config file.  If we don't, just blow away the partition
+  if (systemState.isFSConnected)
+  {
+    File f = FFat.open(CONFIG_FILE_PATH);
+    if (!f || f.isDirectory())
+    {
+      // Shut it down, reformat, start over - nuclear approach!
+      FFat.end();
+      FFat.format(true);
+      systemState.isFSConnected = FFat.begin(true);
+      if (systemState.isFSConnected)
+        systemState.configWriteDefault(FFat);
+    }
+  }
+
+  // Read configuration from FAT partition before 
+  //  we open it up to allow the host computer to write to it
+  systemState.configRead(FFat);
+
+  // Start mass storage class driver.  From here on out, we should be read-only on
+  // the mrbw-wifi side
   msc.start();
 
   // Initialize wifi radio and disconnect from anything we might be connected to
+  //  as well as set some basic stuff - hostname, always sort by signal strength, etc.
   WiFi.mode(WIFI_STA);
+  WiFi.setHostname(systemState.hostname);
   WiFi.disconnect();
+  WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
 
+  // Start the display
   display.setup(&Wire, 0x3C);
 
   ws2812Set(0x000f00);
   tmrStatusScreenUpdate.setup(1000); // Status screen updates every 1s
 }
-
-uint32_t loopCnt = 0;
-
-
 
 void drawSplashScreen()
 {
@@ -64,19 +91,8 @@ void drawSplashScreen()
   snprintf(buffer, sizeof(buffer), "%d.%d.%d %6.6s", MAJOR_VERSION, MINOR_VERSION, DELTA_VERSION, GIT_VERSION);
   display.putstr(buffer, 0, 3);
   display.drawISELogo();  
-  
-  
   display.refresh();
 }
-
-typedef struct 
-{
-  uint32_t loopCnt;
-  uint8_t baseAddress;
-
-} SystemState;
-
-
 
 void drawStatusScreen(SystemState& state)
 {
@@ -97,13 +113,43 @@ void drawStatusScreen(SystemState& state)
   display.clrscr(false);
 
   memset(lineBuf, 0, sizeof(lineBuf));
-  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d B:%02d", 'A', "LNWI", spinnerChars[spinnerNum], 0, state.baseAddress);
+  const char* cmdStnStr = "UNKN";
+  switch(state.cmdStnType)
+  {
+    case CMDSTN_NONE:
+      cmdStnStr = "NONE";
+      break;
+    case CMDSTN_LNWI:
+      cmdStnStr = "LNWI";
+      break;
+    case CMDSTN_JMRI:
+      cmdStnStr = "WTHR";
+      break;
+    case CMDSTN_ESU:
+      cmdStnStr = "ESU ";
+      break;
+    default:
+      cmdStnStr = "UNKN";
+      break;
+  }
+
+  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d B:%02d", state.isAutoNetwork?'A':'C', cmdStnStr, spinnerChars[spinnerNum], 0, state.baseAddress);
   display.putstr(lineBuf, 0, 0);
 
-  snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", "(Searching...)");
+  if (0 == strlen(state.ssid))
+  {
+    snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", "(Searching...)");
+  } else {
+    snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", state.ssid);
+  }
   display.putstr(lineBuf, 0, 1);
 
-  snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", "(Not Connected)");
+  if (state.isWifiConnected)
+  {
+    snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", state.localIP.toString().c_str());
+  } else {
+    snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", "(Not Connected)");
+  }
   display.putstr(lineBuf, 0, 2);
 
   uint32_t lps = state.loopCnt;
@@ -116,33 +162,15 @@ void drawStatusScreen(SystemState& state)
   else if (lps >= 100000)
     snprintf(lpsText, sizeof(lpsText), "%03dMl/s", lps / 1000000);
 
-  snprintf(lineBuf, sizeof(lineBuf), "R:%02ddB  40C %7.7s", -99, lpsText);
+  snprintf(lineBuf, sizeof(lineBuf), "R:%02ddB  40C %7.7s", state.rssi, lpsText);
   display.putstr(lineBuf, 0, 3);
 
   display.refresh();
 }
 
-SystemState systemState;
-
 void loop() 
 {
-/*  Serial.printf("Some crap\n");
-  delay(1000);
-  Serial.printf("Begin scan\n");
-  int n = WiFi.scanNetworks();
-  Serial.printf("Scan done, %d networks found\n", n);
 
-  for (int i=0; i<n; i++)
-  {
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(WiFi.SSID(i));
-      Serial.print(" (");
-      Serial.print(WiFi.RSSI(i));
-      Serial.print(")");
-      Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN)?" ":"*");
-  }
-*/
   systemState.loopCnt++;
 
   switch(mainLoopState)
@@ -166,8 +194,51 @@ void loop()
       if (tmrStatusScreenUpdate.test(true))
       {
         systemState.baseAddress = switches.baseAddressGet();
+        systemState.rssi = WiFi.RSSI();
         drawStatusScreen(systemState);
       }
+
+      // Send version packet
+
+      // Check wifi network - if we don't have it, try to get it
+      if (!systemState.isWifiConnected)
+      {
+        bool networkFound = systemState.wifiScan();
+
+        if (networkFound) // Can either be because search found one or not autconfig
+        {
+          // Try to connect to the network we found
+          Serial.printf("Starting connection to [%s] [%s]\n", systemState.ssid, systemState.password);
+          WiFi.begin(systemState.ssid, systemState.password);
+
+          // FIXME - put timeout here
+          while(WiFi.status() != WL_CONNECTED)
+          {
+            delay(100);
+          }
+          Serial.printf("Connected\n");
+        }
+      }
+
+      if (!systemState.isWifiConnected && WiFi.status() == WL_CONNECTED)
+      {
+        systemState.localIP = WiFi.localIP();
+        systemState.isWifiConnected = true;
+      }
+      else if (systemState.isWifiConnected && WiFi.status() != WL_CONNECTED)
+      {
+        systemState.localIP.fromString("0.0.0.0");
+        systemState.isWifiConnected = false;
+      }
+
+      if (!systemState.isCmdStnConnected)
+      {
+
+
+
+      }
+
+      // Check IP connection - if we don't have it, try to get it
       break;
 
     default:

@@ -9,7 +9,6 @@ Switches::~Switches()
 {
 }
 
-
 void Switches::setup()
 {
   pinMode(GPIO_NUM_9, INPUT_PULLUP);   // 16
@@ -19,9 +18,7 @@ void Switches::setup()
   pinMode(GPIO_NUM_13, INPUT_PULLUP);  // 1
   pinMode(GPIO_NUM_14, INPUT_PULLUP);  // A
   pinMode(GPIO_NUM_21, INPUT_PULLUP);  // FR
-
   this->refresh();
-
 }
 
 void Switches::refresh()
