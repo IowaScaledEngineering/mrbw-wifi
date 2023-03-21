@@ -231,6 +231,9 @@ void loop()
         systemState.isWifiConnected = false;
       }
 
+      if (!systemState.isWifiConnected)
+        return; // Out we go - can't do squat without a wifi connection
+
       if (!systemState.isCmdStnConnected)
       {
 

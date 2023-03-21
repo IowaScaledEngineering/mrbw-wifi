@@ -265,6 +265,20 @@ bool isDccExSSID(const char* ssid)
   return true;
 }
 
+bool SystemState::cmdStnIPScan()
+{
+  if (0 != (uint32_t)this->cmdStnIP)
+    return true;
+
+  if (CMDSTN_LNWI == this->cmdStnType)
+  {
+    // Take our IP, make it a.b.c.1 and return it
+    
+  }
+
+  return true;
+}
+
 bool SystemState::wifiScan()
 {
   if (!this->isAutoNetwork)
