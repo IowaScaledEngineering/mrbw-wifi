@@ -36,8 +36,11 @@ class SystemState
     bool isAutoNetwork;
     uint16_t cmdStnPort;
     IPAddress cmdStnIP;
+    IPAddress cmdStnSuggestedIP;
     CommandStationType cmdStnType;
     IPAddress localIP;
+    WiFiClient cmdStnConnection;
+
     SystemState();
     ~SystemState();
 
@@ -46,6 +49,10 @@ class SystemState
     bool configRead(fs::FS &fs);
 
     const char *wifiSecurityTypeToString(wifi_auth_mode_t e);
+
+    bool cmdStnIPScan();
+
+    bool cmdStnIPSetup();
 
     bool wifiScan();
 };

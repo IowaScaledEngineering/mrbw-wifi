@@ -265,18 +265,28 @@ bool isDccExSSID(const char* ssid)
   return true;
 }
 
-bool SystemState::cmdStnIPScan()
+bool SystemState::cmdStnIPSetup()
 {
-  if (0 != (uint32_t)this->cmdStnIP)
+  if (0 != this->cmdStnSuggestedIP)
+  {
+    this->cmdStnIP = this->cmdStnSuggestedIP;
     return true;
+  }
 
   if (CMDSTN_LNWI == this->cmdStnType)
   {
+    // LNWIs are always on .1
     // Take our IP, make it a.b.c.1 and return it
-    
+    this->cmdStnIP = this->localIP;
+    this->cmdStnIP[3] = 1;
+    return true;
   }
 
-  return true;
+  // Anybody else?  Gotta go looking with a port scan of the local network
+  // FIXME, this should suck less
+
+
+  return false;
 }
 
 bool SystemState::wifiScan()
@@ -358,7 +368,7 @@ bool SystemState::wifiScan()
         strncpy(this->password, "rpI-jmri", sizeof(this->password));
 
       if (0 == (uint32_t)this->cmdStnIP)
-        this->cmdStnIP.fromString("192.168.6.1");
+        this->cmdStnSuggestedIP.fromString("192.168.6.1");
       if (0 == this->cmdStnPort)
         this->cmdStnPort = 12090;
 
@@ -373,7 +383,7 @@ bool SystemState::wifiScan()
         snprintf(this->password, sizeof(this->password), "PASS_", ssid.c_str()+6);
       // FIXME: Set the IP
       if (0 == (uint32_t)this->cmdStnIP)
-        this->cmdStnIP.fromString("192.168.4.1");
+        this->cmdStnSuggestedIP.fromString("192.168.4.1");
       if (0 == this->cmdStnPort)
         this->cmdStnPort = 2560;
       break;

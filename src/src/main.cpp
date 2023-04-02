@@ -3,8 +3,11 @@
 #include "WiFi.h"
 #include "FFat.h"
 
+SET_LOOP_TASK_STACK_SIZE(62 * 1024);
+
 // Include drivers for MRBW-WIFI hardware
 #include "versions.h"
+#include "mrbus.h"
 #include "systemState.h"
 #include "switches.h"
 #include "msc.h"
@@ -12,6 +15,8 @@
 #include "ws2812.h"
 #include "periodicEvent.h"
 
+
+//#define CONFIG_ARDUINO_LOOP_STACK_SIZE 16384
 #define PIN_SDA  33
 #define PIN_SCL  34
 
@@ -19,6 +24,7 @@ ISE_MSC msc;
 I2CDisplay display;
 Switches switches;
 SystemState systemState;
+MRBus mrbus;
 
 typedef enum 
 {
@@ -39,6 +45,8 @@ void setup()
   Wire.setPins(PIN_SDA, PIN_SCL);
   Wire.setClock(400000UL);
   Wire.begin();
+  mrbus.begin();
+
   ws2812Set(0x0f0000);
 
   // Try to mount the FFat partition, format if it can't find it
@@ -170,7 +178,6 @@ void drawStatusScreen(SystemState& state)
 
 void loop() 
 {
-
   systemState.loopCnt++;
 
   switch(mainLoopState)
@@ -194,8 +201,18 @@ void loop()
       if (tmrStatusScreenUpdate.test(true))
       {
         systemState.baseAddress = switches.baseAddressGet();
+        mrbus.setAddress(systemState.baseAddress + 0xD0); // MRBus address for the base is switches + 0xD0 offset
         systemState.rssi = WiFi.RSSI();
         drawStatusScreen(systemState);
+        Serial.printf("memtask: %d heap free:%d\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize());
+      }
+
+      mrbus.processSerial();
+
+      while(!mrbus.rxPktQueue->isEmpty())
+      {
+        MRBusPacket* pkt = mrbus.rxPktQueue->pop();
+        Serial.printf("Pkt [%02x->%02x]\n", pkt->src, pkt->dest);
       }
 
       // Send version packet
@@ -224,22 +241,49 @@ void loop()
       {
         systemState.localIP = WiFi.localIP();
         systemState.isWifiConnected = true;
+        systemState.isCmdStnConnected = false;
       }
       else if (systemState.isWifiConnected && WiFi.status() != WL_CONNECTED)
       {
         systemState.localIP.fromString("0.0.0.0");
         systemState.isWifiConnected = false;
+        systemState.isCmdStnConnected = false;
       }
 
       if (!systemState.isWifiConnected)
         return; // Out we go - can't do squat without a wifi connection
 
+      if (systemState.isCmdStnConnected)
+      {
+        // Just make sure we're really still connected
+        if (!systemState.cmdStnConnection.connected())
+        {
+          systemState.cmdStnConnection.stop();
+          systemState.isCmdStnConnected = false;
+        }
+      }
+
+
       if (!systemState.isCmdStnConnected)
       {
-
-
+        // Try to build a connection
+        if (!systemState.cmdStnIPSetup())
+          return;  // No IP found for a command station, on with life - return from loop() and start over
+        
+        bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort);
+        
+        if (connectSuccessful)
+          systemState.isCmdStnConnected = true;
 
       }
+
+      if (!systemState.isCmdStnConnected)
+        return;
+
+      // If we're here, we should have a command station connected
+
+
+
 
       // Check IP connection - if we don't have it, try to get it
       break;
