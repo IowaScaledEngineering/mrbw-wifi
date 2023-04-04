@@ -20,8 +20,8 @@ SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 
 #define MAX_THROTTLES   26
 #define MRBUS_THROTTLE_BASE_ADDR  0x30
+#define THROTTLE_TIMEOUT_SECONDS  30
 
-//#define CONFIG_ARDUINO_LOOP_STACK_SIZE 16384
 #define PIN_SDA  33
 #define PIN_SCL  34
 
@@ -222,7 +222,7 @@ void loop()
             systemState.activeThrottles++;
 
         drawStatusScreen(systemState);
-        Serial.printf("memtask: %d heap free:%d\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize());
+        //Serial.printf("memtask: %d heap free:%d\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize());
 
         // Send version packet
         MRBusPacket versionPkt;
@@ -289,8 +289,8 @@ void loop()
         systemState.isCmdStnConnected = false;
       }
 
-      if (!systemState.isWifiConnected)
-        return; // Out we go - can't do squat without a wifi connection
+      if (!systemState.isWifiConnected || tmrStatusScreenUpdate.test(false))
+        return; // Out we go - can't do squat without a wifi connection, or maybe we need to do a screen refresh
 
       if (systemState.isCmdStnConnected)
       {
@@ -315,6 +315,7 @@ void loop()
         if (!systemState.cmdStnIPSetup())
           return;  // No IP found for a command station, on with life - return from loop() and start over
         
+        systemState.cmdStnConnection.setTimeout(10);
         bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort);
         
         if (connectSuccessful)
@@ -341,7 +342,7 @@ void loop()
 
       }
 
-      if (!systemState.isCmdStnConnected)
+      if (!systemState.isCmdStnConnected || tmrStatusScreenUpdate.test(false))
         return;
 
       // If we're here, we should have a command station connected
@@ -349,7 +350,7 @@ void loop()
       {
         MRBusPacket pkt;
         mrbus.rxPktQueue->pop(pkt);
-        Serial.printf("Pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
+        //Serial.printf("Pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
 
         if (pkt.src == systemState.mrbusSrcAddrGet())
         {
@@ -365,6 +366,14 @@ void loop()
         }
       }
 
+      // Check for dead throttles and remove them
+      for(uint32_t thrNum=0; thrNum < MAX_THROTTLES; thrNum++)
+      {
+        if (throttles[thrNum].isActive() && throttles[thrNum].isExpired(THROTTLE_TIMEOUT_SECONDS))
+        {
+          throttles[thrNum].disconnect(systemState.cmdStn);
+        }
+      }
       break;
 
     default:

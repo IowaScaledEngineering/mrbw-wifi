@@ -28,5 +28,8 @@ class MRBusThrottle
         void initialize(uint8_t mrbusAddr);
         uint8_t mrbusAddrGet();
         bool isActive();
+        bool isExpired(uint32_t idleMilliseconds);
+        bool release(CommandStation *cmdStn);
+        bool disconnect(CommandStation *cmdStn);
         void update(CommandStation *cmdStn, MRBusPacket &pkt);
 };

@@ -48,12 +48,38 @@ bool MRBusThrottle::isActive()
   return this->active;
 }
 
+bool MRBusThrottle::isExpired(uint32_t idleSeconds)
+{
+  // Make this easy - lastupdate is stored in milliseconds 
+  if (esp_timer_get_time() - this->lastUpdate > idleSeconds * 1000000)
+    return true;
+  return false;
+}
+
+// Release just releases the current engine number
+bool MRBusThrottle::release(CommandStation* cmdStn)
+{
+  Serial.printf("Locomotive %c:%d released\n", this->isLongAddr?'L':'S', this->locAddr);
+  return true;
+}
+
+
+// Disconnect says that the throttle went away, go ahead and shut things down and
+//  mark the throttle as inactive
+bool MRBusThrottle::disconnect(CommandStation* cmdStn)
+{
+  cmdStn->locomotiveSpeedSet(this->locCmdStnReference, 0, false);
+  this->release(cmdStn);
+
+  this->active = false;
+  return true;
+}
 
 void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
 {
   bool updateFunctions[MAX_FUNCTIONS];
 
-  if (9 != pkt.len || 'S' != pkt.data[0])
+  if (pkt.len < 10 || 'S' != pkt.data[0])
     return; // Not a status update, ignore
 
   uint16_t addr = pkt.data[1] * 256 + pkt.data[2];
@@ -73,10 +99,10 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
 
   bool reverse = (pkt.data[3] & 0x80)?false:true;
 
-  Serial.printf("In MRBusThrottle::update\n");
-
   if (addr != this->locAddr || longAddr != this->isLongAddr || false == this->isCmdStnReferenceValid)
   {
+    // FIXME: If we already have a locomotive, we may need to release it
+
     // Need to acquire locomotive from command station
     bool successfullyAcquired = cmdStn->locomotiveObjectGet(&this->locCmdStnReference, addr, longAddr, this->throttleAddr);
     if (!successfullyAcquired)
@@ -91,12 +117,12 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
       this->locEStop = false;
       return;
     }
-    Serial.printf("Locomotive %d acquired\n", this->locAddr);
     this->active = true;
     this->isCmdStnReferenceValid = true;
     this->locFunctionsGood = false;
     this->isLongAddr = longAddr;
     this->locAddr = addr;
+    Serial.printf("Locomotive %c:%d acquired\n", this->isLongAddr?'L':'S', this->locAddr);
   }
 
   // Only send estop if we just moved into that state
@@ -135,7 +161,6 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
       this->locFunctions[i] = updateFunctions[i];
     }
   }
-  Serial.printf("Locomotive %d updated\n", this->locAddr);
+  //Serial.printf("Locomotive %d updated\n", this->locAddr);
   this->lastUpdate = esp_timer_get_time();
-
 }
