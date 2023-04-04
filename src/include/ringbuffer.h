@@ -27,6 +27,12 @@ template <typename T> class RingBuffer
         delete[] this->ptr;
     }
 
+    void flush()
+    {
+      this->full = false;
+      this->headIdx = this->tailIdx;
+    }
+
     bool isEmpty()
     {
       if(this->headIdx == this->tailIdx)
@@ -46,18 +52,17 @@ template <typename T> class RingBuffer
       return (this->headIdx - this->tailIdx) % this->size;
     }
 
-    T *pop()
+    bool pop(T& retval)
     {
-      T* retval = NULL;
       if (this->isEmpty())
-        return retval;
+        return false;
       
-      retval = &this->ptr[this->tailIdx];
+      retval = this->ptr[this->tailIdx];
       if(++this->tailIdx >= this->size)
         this->tailIdx = 0;
       this->full = false;
       
-      return retval; 
+      return true;
     }
 
     bool push(T& newItem)

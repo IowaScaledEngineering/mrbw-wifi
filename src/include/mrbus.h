@@ -44,6 +44,7 @@ class MRBus
         MRBus();
         ~MRBus();
         bool begin();
+        void transmitPackets();
         bool processSerial();
         bool setAddress(uint8_t address);
         RingBuffer<MRBusPacket>* rxPktQueue;

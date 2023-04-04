@@ -14,7 +14,12 @@ SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 #include "display.h"
 #include "ws2812.h"
 #include "periodicEvent.h"
+#include "MRBusThrottle.h"
+#include "WiThrottle.h"
+#include "ESUCabControl.h"
 
+#define MAX_THROTTLES   26
+#define MRBUS_THROTTLE_BASE_ADDR  0x30
 
 //#define CONFIG_ARDUINO_LOOP_STACK_SIZE 16384
 #define PIN_SDA  33
@@ -25,6 +30,7 @@ I2CDisplay display;
 Switches switches;
 SystemState systemState;
 MRBus mrbus;
+MRBusThrottle throttles[MAX_THROTTLES];
 
 typedef enum 
 {
@@ -48,6 +54,12 @@ void setup()
   mrbus.begin();
 
   ws2812Set(0x0f0000);
+
+  // Initialize the throttle array
+  for(uint32_t thrNum=0; thrNum<MAX_THROTTLES; thrNum++)
+  {
+    throttles[thrNum].initialize(MRBUS_THROTTLE_BASE_ADDR + thrNum);
+  }
 
   // Try to mount the FFat partition, format if it can't find it
   systemState.isFSConnected = FFat.begin(true);
@@ -141,7 +153,7 @@ void drawStatusScreen(SystemState& state)
       break;
   }
 
-  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d B:%02d", state.isAutoNetwork?'A':'C', cmdStnStr, spinnerChars[spinnerNum], 0, state.baseAddress);
+  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d B:%02d", state.isAutoNetwork?'A':'C', cmdStnStr, spinnerChars[spinnerNum], state.activeThrottles, state.baseAddress);
   display.putstr(lineBuf, 0, 0);
 
   if (0 == strlen(state.ssid))
@@ -203,19 +215,46 @@ void loop()
         systemState.baseAddress = switches.baseAddressGet();
         mrbus.setAddress(systemState.baseAddress + 0xD0); // MRBus address for the base is switches + 0xD0 offset
         systemState.rssi = WiFi.RSSI();
+
+        systemState.activeThrottles = 0;
+        for(uint32_t thrNum=0; thrNum < MAX_THROTTLES; thrNum++)
+          if (throttles[thrNum].isActive())
+            systemState.activeThrottles++;
+
         drawStatusScreen(systemState);
         Serial.printf("memtask: %d heap free:%d\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize());
+
+        // Send version packet
+        MRBusPacket versionPkt;
+
+        versionPkt.src = systemState.baseAddress + 0xD0;
+        versionPkt.dest = 0xFF;
+        versionPkt.len = 14;
+        versionPkt.data[0]  = 'v';
+        versionPkt.data[1]  = 0x80;
+        versionPkt.data[2]  = 0xAB;
+        versionPkt.data[3]  = 0xCD;
+        versionPkt.data[4]  = 0xEF;
+        versionPkt.data[5]  = 1;
+        versionPkt.data[6]  = 0;
+        versionPkt.data[7]  = 'N';
+        versionPkt.data[8]  = 'O';
+        versionPkt.data[9]  = ' ';
+        versionPkt.data[10] = 'W';
+        versionPkt.data[11] = 'I';
+        versionPkt.data[12] = 'F';
+        versionPkt.data[13] = 'I';
+
+        mrbus.txPktQueue->push(versionPkt);
+
       }
 
       mrbus.processSerial();
 
-      while(!mrbus.rxPktQueue->isEmpty())
+      if (!systemState.isWifiConnected || !systemState.isCmdStnConnected)
       {
-        MRBusPacket* pkt = mrbus.rxPktQueue->pop();
-        Serial.printf("Pkt [%02x->%02x]\n", pkt->src, pkt->dest);
+        mrbus.rxPktQueue->flush();
       }
-
-      // Send version packet
 
       // Check wifi network - if we don't have it, try to get it
       if (!systemState.isWifiConnected)
@@ -258,6 +297,12 @@ void loop()
         // Just make sure we're really still connected
         if (!systemState.cmdStnConnection.connected())
         {
+          
+          if (NULL != systemState.cmdStn)
+          {
+            systemState.cmdStn->end();
+            delete systemState.cmdStn;
+          }
           systemState.cmdStnConnection.stop();
           systemState.isCmdStnConnected = false;
         }
@@ -273,7 +318,26 @@ void loop()
         bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort);
         
         if (connectSuccessful)
+        {
           systemState.isCmdStnConnected = true;
+          // Create command station object
+          
+          switch(systemState.cmdStnType)
+          {
+            case CMDSTN_JMRI:
+              systemState.cmdStn = new WiThrottle;
+              systemState.cmdStn->begin(systemState.cmdStnConnection, 0);
+              break;
+            case CMDSTN_LNWI:
+              systemState.cmdStn = new WiThrottle;
+              systemState.cmdStn->begin(systemState.cmdStnConnection, WITHROTTLE_QUIRK_LNWI);
+              break;
+            case CMDSTN_ESU:
+              systemState.cmdStn = new ESUCabControl;
+              systemState.cmdStn->begin(systemState.cmdStnConnection, 0);
+              break;
+          }
+        }
 
       }
 
@@ -281,11 +345,26 @@ void loop()
         return;
 
       // If we're here, we should have a command station connected
+      while(!mrbus.rxPktQueue->isEmpty())
+      {
+        MRBusPacket pkt;
+        mrbus.rxPktQueue->pop(pkt);
+        Serial.printf("Pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
 
+        if (pkt.src == systemState.mrbusSrcAddrGet())
+        {
+          // Ouch, conflicting base station detected
+        }
 
+        if (pkt.dest == systemState.mrbusSrcAddrGet() && pkt.data[0] == 'S' && pkt.len == 10 
+          && (pkt.src >= MRBUS_THROTTLE_BASE_ADDR && pkt.src < MRBUS_THROTTLE_BASE_ADDR + MAX_THROTTLES))
+        {
+          Serial.printf("Throttle pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
+          uint8_t throttleNum = pkt.src - MRBUS_THROTTLE_BASE_ADDR;
+          throttles[throttleNum].update(systemState.cmdStn, pkt);
+        }
+      }
 
-
-      // Check IP connection - if we don't have it, try to get it
       break;
 
     default:

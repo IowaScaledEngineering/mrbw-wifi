@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <FFat.h>
+#include "CommandStation.h"
 
 #define CONFIG_FILE_PATH "/config.txt"
 #define STRLN_SSID      32
@@ -35,14 +36,18 @@ class SystemState
     bool debugWifiEnable;
     bool isAutoNetwork;
     uint16_t cmdStnPort;
+    uint8_t activeThrottles;
     IPAddress cmdStnIP;
     IPAddress cmdStnSuggestedIP;
     CommandStationType cmdStnType;
     IPAddress localIP;
     WiFiClient cmdStnConnection;
+    CommandStation* cmdStn;
 
     SystemState();
     ~SystemState();
+
+    uint8_t mrbusSrcAddrGet();
 
     bool configWriteDefault(fs::FS &fs);
 

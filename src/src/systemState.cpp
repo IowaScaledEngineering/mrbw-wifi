@@ -5,6 +5,7 @@ SystemState::SystemState()
 {
   this->loopCnt = 0;
   this->baseAddress = 0;
+  this->activeThrottles = 0;
   this->debugWifiEnable = false;
   this->isFSConnected = false;
   this->isAutoNetwork = true;
@@ -21,6 +22,11 @@ SystemState::SystemState()
 
 SystemState::~SystemState()
 {
+}
+
+uint8_t SystemState::mrbusSrcAddrGet()
+{
+  return 0xD0 + this->baseAddress;
 }
 
 bool SystemState::configWriteDefault(fs::FS &fs)

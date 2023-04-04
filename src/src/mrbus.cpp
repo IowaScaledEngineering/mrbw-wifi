@@ -52,9 +52,96 @@ bool MRBus::begin()
   return true;
 }
 
+void MRBus::transmitPackets()
+{
+  size_t bytesAvailable;
+  uart_get_tx_buffer_free_size(UART_NUM_1, &bytesAvailable);
+
+  if (this->txPktQueue->isEmpty() || bytesAvailable < 64)
+    return;
+
+  MRBusPacket pkt;
+  if (!this->txPktQueue->pop(pkt))
+    return;
+  
+  uint8_t xBeeTxBuffer[64];
+  uint8_t xBeeTxBuffer_escaped[64];
+
+/*
+#     txBuffer.append(0x7E)       # 0 - Start 
+#     txBuffer.append(0x00)       # 1 - Len MSB
+#     txBuffer.append(txPktLen)   # 2 - Len LSB
+#     txBuffer.append(0x01)       # 3 - API being called - transmit by 16 bit address
+#     txBuffer.append(0x00)       # 4 - Frame identifier
+#     txBuffer.append(0xFF)       # 5 - MSB of dest address - broadcast 0xFFFF
+#     txBuffer.append(0xFF)       # 6 - LSB of dest address - broadcast 0xFFFF
+#     txBuffer.append(0x00)       # 7 - Transmit Options
+     
+#     txBuffer.append(dest)           # 8 / 0 - Destination
+#     txBuffer.append(src)            # 9 / 1 - Source
+#     txBuffer.append(len(data) + 5)  # 10/ 2 - Length
+#     txBuffer.append(0)              # 11/ 3 - CRC High
+#     txBuffer.append(0)              # 12/ 4 - CRC Low
+
+
+
+TX: [7e 00 18 01 00 ff ff 00 ff d0 7d 33 1b cf 76 80 ab cd ef 01 00 4e 4f 20 57 49 46 49 ]
+
+
+*/
+  pkt.src = this->addr;
+  pkt.calculateCRC(); // Update the CRC just to make sure we've got it
+  //Serial.printf("TX src=%02x dst=%02x len=%d crc=%04x\n", pkt->src,pkt->dest, pkt->len + 5, pkt->crc);
+
+  xBeeTxBuffer[0] = 0x7E;
+  xBeeTxBuffer[1] = 0x00;
+  xBeeTxBuffer[2] = 10 + pkt.len;
+  xBeeTxBuffer[3] = 0x01;
+  xBeeTxBuffer[4] = 0x00;
+  xBeeTxBuffer[5] = 0xFF;
+  xBeeTxBuffer[6] = 0xFF;
+  xBeeTxBuffer[7] = 0x00;
+
+  xBeeTxBuffer[8] = pkt.dest;
+  xBeeTxBuffer[9] = pkt.src; 
+  xBeeTxBuffer[10] = pkt.len + 5;
+  xBeeTxBuffer[11] = 0xFF & (pkt.crc);
+  xBeeTxBuffer[12] = 0xFF & (pkt.crc>>8);
+  for (int i=0; i<pkt.len; i++)
+    xBeeTxBuffer[13 + i] = pkt.data[i];
+  
+  xBeeTxBuffer[13 + pkt.len] = 0;
+  for (int i=3; i<13+pkt.len; i++)
+    xBeeTxBuffer[13 + pkt.len] += xBeeTxBuffer[i];
+
+  xBeeTxBuffer[13 + pkt.len] = 0xFF - xBeeTxBuffer[13 + pkt.len];
+
+  uint8_t xbtx_idx = 0; // Number of bytes in escaped buffer
+  xBeeTxBuffer_escaped[xbtx_idx++] = xBeeTxBuffer[0];
+  for(int i=1; i<13 + 1 + pkt.len; i++)
+  {
+    switch(xBeeTxBuffer[i])
+    {
+      case 0x7E:
+      case 0x7D:
+      case 0x11:
+      case 0x13:
+        xBeeTxBuffer_escaped[xbtx_idx++] = 0x7D;
+        xBeeTxBuffer_escaped[xbtx_idx++] = xBeeTxBuffer[i] ^ 0x20;
+        break;
+      default:
+        xBeeTxBuffer_escaped[xbtx_idx++] = xBeeTxBuffer[i];
+        break;
+    }
+  }
+
+  uart_write_bytes(UART_NUM_1, xBeeTxBuffer_escaped, xbtx_idx);
+}
 
 bool MRBus::processSerial()
 {
+  this->transmitPackets();
+
   int bytesRead = uart_read_bytes(UART_NUM_1, this->rxBuffer + this->rxBufferUsed, this->rxBufferSz - this->rxBufferUsed - 1, 0);
   
   // Error case
@@ -163,9 +250,6 @@ bool MRBus::processSerial()
   return true;
 }
 
-
-
-
 MRBusPacket::MRBusPacket()
 {
   this->src = 0x03;
@@ -192,14 +276,44 @@ bool MRBusPacket::fromBuffer(uint8_t* buffer, uint8_t bufferSz)
 
   this->src = buffer[MRBUS_PKT_SRC];
   this->dest = buffer[MRBUS_PKT_DEST];
-  this->len = (6+sizeof(this->data))<buffer[MRBUS_PKT_LEN] ? (6+sizeof(this->data)):buffer[MRBUS_PKT_LEN];
+  this->len = (5+sizeof(this->data))<buffer[MRBUS_PKT_LEN] ? (sizeof(this->data)):buffer[MRBUS_PKT_LEN]-5;
   this->crc = (((uint16_t)buffer[MRBUS_PKT_CRC_H])<<8) | buffer[MRBUS_PKT_CRC_L];
 
   memset(this->data, 0, sizeof(this->data));
-  for (int i=0; i<this->len-6; i++)
-    this->data[i] = buffer[i+6];
+  for (int i=0; i<this->len-5; i++)
+    this->data[i] = buffer[i+5];
 
   return true;
+}
+
+uint16_t MRBusPacket::calculateCRC()
+{
+  uint16_t crc = 0;
+  for (int i=0; i<5+this->len; i++)
+  {
+    switch(i)
+    {
+      case 0:
+        crc = this->crc16Update(crc, this->dest);
+        break;
+      case 1:
+        crc = this->crc16Update(crc, this->src);
+        break;
+      case 2:
+        crc = this->crc16Update(crc, this->len + 5); // Remember to add header length
+        break;
+      case 3:
+      case 4:
+        // These are the CRC bytes, do nothing
+        break;
+      default:
+        crc = this->crc16Update(crc, this->data[i-5]);
+        break;
+    }
+  }
+
+  this->crc = crc;
+  return crc;
 }
 
 
@@ -216,37 +330,36 @@ uint16_t MRBusPacket::crc16Update(uint16_t crc, uint8_t a)
     0x0E, 0x0F, 0x0D, 0x0C, 0x09, 0x08, 0x0A, 0x0B
   };
 
-	uint8_t t = 0;
-	uint8_t i = 0;
-	uint8_t W = 0;
-	uint8_t crc16_high = (crc >> 8) & 0xFF;
-	uint8_t crc16_low = crc & 0xFF;
+  uint8_t t = 0;
+  uint8_t i = 0;
+  uint8_t w = 0;
+  uint8_t crc16_high = (crc >> 8) & 0xFF;
+  uint8_t crc16_low = crc & 0xFF;
 
-	while (i < 2)
-	{
-		if (i)
-		{
-			W = 0x0F & ((((crc16_high << 4) & 0xF0) | ((crc16_high >> 4) & 0x0F)) ^ a);
-			t = W;
-		}
-		else
-		{
-			W = 0xF0 & (crc16_high ^ a);
-			t = W;
-			t = ((t << 4) & 0xF0) | ((t >> 4) & 0x0F);
-		}
+  while (i < 2)
+  {
+    if (i != 0)
+    {
+      w = (((crc16_high << 4) & 0xF0) | ((crc16_high >> 4) & 0x0F));
+      t = (w ^ a) & 0x0F;
+    }
+    else
+    {
+      t = 0xF0 & (crc16_high ^ a);
+      t = ((t << 4) & 0xF0) | ((t >> 4) & 0x0F);
+    }
 
-		crc16_high = crc16_high << 4; 
-		crc16_high |= (crc16_low >> 4);
-		crc16_low = crc16_low << 4;
+    crc16_high = (crc16_high << 4) & 0xFF; 
+    crc16_high |= (crc16_low >> 4);
+    crc16_low = crc16_low << 4;
 
-		crc16_high = crc16_high ^ MRBus_CRC16_HighTable[t];
-		crc16_low = crc16_low ^ MRBus_CRC16_LowTable[t];
+    crc16_high = crc16_high ^ MRBus_CRC16_HighTable[t];
+    crc16_low = crc16_low ^ MRBus_CRC16_LowTable[t];
 
-		i++;
-	}
+    i++;
+  }
 
-	return ( ((crc16_high << 8) & 0xFF00) + crc16_low );
+  return ( (((uint16_t)crc16_high << 8) & 0xFF00) | (uint16_t)crc16_low );
 }
 
 
