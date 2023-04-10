@@ -1,4 +1,5 @@
 #include "systemState.h"
+#include "commonFuncs.h"
 #include "defaultConfigFile.h"
 
 SystemState::SystemState()
@@ -40,27 +41,6 @@ bool SystemState::configWriteDefault(fs::FS &fs)
   writeSuccess = f.print(defaultConfigFileContents);
   f.close();
   return writeSuccess;
-}
-
-char* rtrim(char* in)
-{
-  char* endPtr = in + strlen(in) - 1;
-  while (endPtr >= in && isspace(*endPtr))
-    *endPtr-- = 0;
-
-  return in;
-}
-
-char* ltrim(char* in)
-{
-  char* startPtr = in;
-  uint32_t bytesToMove = strlen(in);
-  while(isspace(*startPtr))
-    startPtr++;
-  bytesToMove -= (startPtr - in);
-  memmove(in, startPtr, bytesToMove);
-  in[bytesToMove] = 0;
-  return in;
 }
 
 bool configKeyValueSplit(char* key, uint32_t keySz, char* value, uint32_t valueSz, const char* configLine)

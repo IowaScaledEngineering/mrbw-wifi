@@ -36,7 +36,7 @@ bool MRBus::begin()
     .data_bits = UART_DATA_8_BITS,
     .parity = UART_PARITY_DISABLE,
     .stop_bits = UART_STOP_BITS_1,
-    .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
+    .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, //UART_HW_FLOWCTRL_CTS_RTS,
     .rx_flow_ctrl_thresh = 122,
   };
   // Configure UART parameters
@@ -56,7 +56,6 @@ void MRBus::transmitPackets()
 {
   size_t bytesAvailable;
   uart_get_tx_buffer_free_size(UART_NUM_1, &bytesAvailable);
-
   if (this->txPktQueue->isEmpty() || bytesAvailable < 64)
     return;
 
@@ -64,8 +63,8 @@ void MRBus::transmitPackets()
   if (!this->txPktQueue->pop(pkt))
     return;
   
-  uint8_t xBeeTxBuffer[64];
-  uint8_t xBeeTxBuffer_escaped[64];
+  uint8_t* xBeeTxBuffer = new uint8_t[64];
+  uint8_t* xBeeTxBuffer_escaped = new uint8_t[64];
 
 /*
 #     txBuffer.append(0x7E)       # 0 - Start 
@@ -83,11 +82,7 @@ void MRBus::transmitPackets()
 #     txBuffer.append(0)              # 11/ 3 - CRC High
 #     txBuffer.append(0)              # 12/ 4 - CRC Low
 
-
-
 TX: [7e 00 18 01 00 ff ff 00 ff d0 7d 33 1b cf 76 80 ab cd ef 01 00 4e 4f 20 57 49 46 49 ]
-
-
 */
   pkt.src = this->addr;
   pkt.calculateCRC(); // Update the CRC just to make sure we've got it
@@ -134,8 +129,10 @@ TX: [7e 00 18 01 00 ff ff 00 ff d0 7d 33 1b cf 76 80 ab cd ef 01 00 4e 4f 20 57 
         break;
     }
   }
-
   uart_write_bytes(UART_NUM_1, xBeeTxBuffer_escaped, xbtx_idx);
+
+  delete xBeeTxBuffer;
+  delete xBeeTxBuffer_escaped;
 }
 
 bool MRBus::processSerial()
@@ -289,6 +286,7 @@ bool MRBusPacket::fromBuffer(uint8_t* buffer, uint8_t bufferSz)
 uint16_t MRBusPacket::calculateCRC()
 {
   uint16_t crc = 0;
+
   for (int i=0; i<5+this->len; i++)
   {
     switch(i)
@@ -336,17 +334,15 @@ uint16_t MRBusPacket::crc16Update(uint16_t crc, uint8_t a)
   uint8_t crc16_high = (crc >> 8) & 0xFF;
   uint8_t crc16_low = crc & 0xFF;
 
-  while (i < 2)
+  for(uint8_t i=0; i<2; i++)
   {
-    if (i != 0)
-    {
-      w = (((crc16_high << 4) & 0xF0) | ((crc16_high >> 4) & 0x0F));
-      t = (w ^ a) & 0x0F;
-    }
-    else
+    if (0 == i)
     {
       t = 0xF0 & (crc16_high ^ a);
       t = ((t << 4) & 0xF0) | ((t >> 4) & 0x0F);
+    } else {
+      w = (((crc16_high << 4) & 0xF0) | ((crc16_high >> 4) & 0x0F));
+      t = (w ^ a) & 0x0F;
     }
 
     crc16_high = (crc16_high << 4) & 0xFF; 
@@ -355,8 +351,6 @@ uint16_t MRBusPacket::crc16Update(uint16_t crc, uint8_t a)
 
     crc16_high = crc16_high ^ MRBus_CRC16_HighTable[t];
     crc16_low = crc16_low ^ MRBus_CRC16_LowTable[t];
-
-    i++;
   }
 
   return ( (((uint16_t)crc16_high << 8) & 0xFF00) | (uint16_t)crc16_low );

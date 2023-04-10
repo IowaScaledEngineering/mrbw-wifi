@@ -17,29 +17,41 @@ bool ESUCabControl::end()
   return true;
 }
 
-
-bool ESUCabControl::locomotiveObjectGet(CmdStnLocRef* locCmdStnRef, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr)
-{
-  locCmdStnRef->esuObjID = 0;
-  return true;
-}
-
-bool ESUCabControl::locomotiveEmergencyStop(CmdStnLocRef locCmdStnRef)
+bool ESUCabControl::update()
 {
   return true;
 }
 
-bool ESUCabControl::locomotiveSpeedSet(CmdStnLocRef locCmdStnRef, uint8_t speed, bool isReverse)
+bool ESUCabControl::locomotiveObjectGet(CmdStnLocRef** locCmdStnRef, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr)
+{
+  *locCmdStnRef = new CmdStnLocRef(addr, isLongAddr, mrbusAddr);
+  return true;
+}
+
+bool ESUCabControl::locomotiveEmergencyStop(CmdStnLocRef* locCmdStnRef)
 {
   return true;
 }
 
-bool ESUCabControl::locomotiveFunctionsGet(CmdStnLocRef locCmdStnRef, bool functionStates[])
+bool ESUCabControl::locomotiveSpeedSet(CmdStnLocRef* locCmdStnRef, uint8_t speed, bool isReverse)
 {
   return true;
 }
 
-bool ESUCabControl::locomotiveFunctionSet(CmdStnLocRef locCmdStnRef, uint8_t funcNum, bool funcActive)
+bool ESUCabControl::locomotiveFunctionsGet(CmdStnLocRef* locCmdStnRef, bool functionStates[])
 {
   return true;
 }
+
+bool ESUCabControl::locomotiveFunctionSet(CmdStnLocRef* locCmdStnRef, uint8_t funcNum, bool funcActive)
+{
+  return true;
+}
+
+bool ESUCabControl::locomotiveDisconnect(CmdStnLocRef* locCmdStnRef)
+{
+  delete locCmdStnRef;
+  return true;
+}
+
+

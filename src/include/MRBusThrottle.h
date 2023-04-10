@@ -1,10 +1,9 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
+#include "commonFuncs.h"
 #include "CommandStation.h"
 #include "mrbus.h"
-
-#define MAX_FUNCTIONS  29
 
 class MRBusThrottle
 {
@@ -20,7 +19,7 @@ class MRBusThrottle
       bool locFunctionsGood;
       uint64_t lastUpdate;
       bool isCmdStnReferenceValid;
-      CmdStnLocRef locCmdStnReference;
+      CmdStnLocRef *locCmdStnReference;
 
     public:
         MRBusThrottle();

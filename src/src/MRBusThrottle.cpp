@@ -70,8 +70,7 @@ bool MRBusThrottle::disconnect(CommandStation* cmdStn)
 {
   cmdStn->locomotiveSpeedSet(this->locCmdStnReference, 0, false);
   this->release(cmdStn);
-
-  this->active = false;
+  this->initialize(this->throttleAddr);
   return true;
 }
 

@@ -6,6 +6,7 @@
 SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 
 // Include drivers for MRBW-WIFI hardware
+#include "commonFuncs.h"
 #include "versions.h"
 #include "mrbus.h"
 #include "systemState.h"
@@ -18,9 +19,6 @@ SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 #include "WiThrottle.h"
 #include "ESUCabControl.h"
 
-#define MAX_THROTTLES   26
-#define MRBUS_THROTTLE_BASE_ADDR  0x30
-#define THROTTLE_TIMEOUT_SECONDS  30
 
 #define PIN_SDA  33
 #define PIN_SCL  34
@@ -222,7 +220,7 @@ void loop()
             systemState.activeThrottles++;
 
         drawStatusScreen(systemState);
-        //Serial.printf("memtask: %d heap free:%d\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize());
+        Serial.printf("memtask: %d heap free:%d\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize());
 
         // Send version packet
         MRBusPacket versionPkt;
@@ -246,7 +244,6 @@ void loop()
         versionPkt.data[13] = 'I';
 
         mrbus.txPktQueue->push(versionPkt);
-
       }
 
       mrbus.processSerial();
@@ -315,8 +312,7 @@ void loop()
         if (!systemState.cmdStnIPSetup())
           return;  // No IP found for a command station, on with life - return from loop() and start over
         
-        systemState.cmdStnConnection.setTimeout(10);
-        bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort);
+        bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort, 10);
         
         if (connectSuccessful)
         {
@@ -345,12 +341,15 @@ void loop()
       if (!systemState.isCmdStnConnected || tmrStatusScreenUpdate.test(false))
         return;
 
+
+      systemState.cmdStn->update();
+
       // If we're here, we should have a command station connected
       while(!mrbus.rxPktQueue->isEmpty())
       {
         MRBusPacket pkt;
         mrbus.rxPktQueue->pop(pkt);
-        //Serial.printf("Pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
+        Serial.printf("Pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
 
         if (pkt.src == systemState.mrbusSrcAddrGet())
         {
