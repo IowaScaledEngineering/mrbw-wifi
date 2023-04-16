@@ -9,6 +9,8 @@ WiThrottle::WiThrottle()
   memset(this->rxBuffer, 0, WITHROTTLE_RX_BUFFER_SZ);
   this->rxBufferUsed = 0;
   this->keepaliveTimer.setup(10000);
+  for(uint32_t i; i<MAX_THROTTLES; i++)
+    this->throttleStates[i] = NULL;
 }
 
 WiThrottle::~WiThrottle()
@@ -67,21 +69,23 @@ void WiThrottle::rxtx(const char* cmdStr)
   return;
 }
 
-uint8_t WiThrottle::getMultiThrottleLetter(uint8_t mrbusAddr)
+uint8_t WiThrottle::getMultiThrottleLetter(uint8_t mrbusAddr, ThrottleState* tState)
 {
-  char validLetters[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   // For now, this is going to be algorithmic - it's throttle mrbus addr - base + 'A'
   uint8_t offset = mrbusAddr - MRBUS_THROTTLE_BASE_ADDR;
 
-  if (offset >= sizeof(validLetters))  // Eh, now what?
+  if (offset >= MAX_THROTTLES)  // Eh, now what?
     return 0;
   
-  return validLetters[offset];
+  this->throttleStates[offset] = tState;
+  return this->validThrottleLetters[offset];
 }
 
 void WiThrottle::releaseMultiThrottleLetter(uint8_t mrbusAddr)
 {
-  return; // Do nothing right now since it's algorithmic
+  uint8_t offset = mrbusAddr - MRBUS_THROTTLE_BASE_ADDR;
+  this->throttleStates[offset] = NULL;
+  return;
 }
 
 
@@ -146,30 +150,62 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
     // Multithrottle update 
     // FIXME: Lots to do here
     Serial.printf("JMRI RX: Multithrottle Update [%s]\n", rxStr);
-    char* ptr = rxStr;
+    char* cmd = strdup(rxStr);
+    char* ptr = cmd;
+
     strsep(&ptr, "<;>");
     if (NULL != ptr)
-      Serial.printf("[%s] -> [%s]\n", rxStr, ptr);
+    {
+      ThrottleState* tState = this->getThrottleStateForMultiThrottleLetter(cmd[1]);
+      if (NULL != tState)
+      {
+        const char* data = ptr + 2;
+        uint8_t cmdLen = strlen(cmd);
+        uint8_t dataLen = strlen(data);
+        Serial.printf("[%s] -> [%s]\n", cmd, data);
+
+
+        if (cmdLen >= 3 && 'S' == cmd[2])
+        {
+          // Somebody else has this throttle, we need to confirm stealing it.
+          char cmdBuffer[32];
+          snprintf(cmdBuffer, sizeof(cmdBuffer), "%s\n", rxStr);
+          this->cmdStnConnection->write(cmdBuffer);
+        }
+        else if (cmdLen >= 3 && 'A' == cmd[2])
+        {
+          if (dataLen >= 3 && 'F' == data[0])
+          {
+            bool funcVal = ('1' == data[1])?true:false;
+            uint8_t funcNum = atoi(data+2);
+            if (funcNum < MAX_FUNCTIONS)
+              tState->locFunctions[funcNum] = funcVal;
+
+            if (funcNum >= 28)
+              tState->locFunctionsGood = true;
+
+            Serial.printf("JMRI RX: Throttle %c func %02d = %d\n", cmd[1],funcNum, tState->locFunctions[funcNum]?1:0);
+
+          } else if (dataLen >= 2 && 'V' == data[0]) {
+            uint8_t speed = atoi(data+1);
+            tState->locSpeed = speed;
+            Serial.printf("JMRI RX: Throttle %c speed %d\n", cmd[1], tState->locSpeed);
+          } else if (dataLen >= 2  && 'R' == data[0]) {
+            tState->locRevDirection = ('0' == data[1])?false:true;
+            Serial.printf("JMRI RX: Throttle %c direction %c\n", cmd[1], tState->locRevDirection?'R':'F');
+          } else {
+            Serial.printf("JMRI RX: Unhandled multithrottle Update [%s]\n", rxStr);
+          }
+
+        }
+      }
+    }
+
+    if (NULL != cmd)
+      free(cmd);
 
 
     // Make sure there's a <;>, otherwise this makes no sense
-/*
-    if ('S' == rxStr[2])
-    {
-      // Somebody else has this throttle, we need to confirm stealing it.
-      char cmdBuffer[32];
-      snprintf(cmdBuffer, sizeof(cmdBuffer), "%s\n", rxStr);
-      this->cmdStnConnection->write(cmdBuffer);
-    }
-    else if ('A' == rxStr[2])
-    {
-
-    }
-    else 
-    {
-      Serial.printf("JMRI RX: Unhandled multithrottle Update [%s]\n", rxStr);
-    }
-*/
   }
   else
   {
@@ -218,18 +254,24 @@ bool WiThrottle::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool 
   char cmdBuffer[64];
 
   Serial.printf("JMRI locomotiveObjectGet(%c:%04d, 0x%02X)\n", isLongAddr?'L':'S', addr, mrbusAddr);
-  uint8_t multiThrottleLetter = this->getMultiThrottleLetter(mrbusAddr);
+  uint8_t multiThrottleLetter = this->getMultiThrottleLetter(mrbusAddr, tState);
   tState->locCmdStnRef = new WiThrottleLocRef(addr, isLongAddr, mrbusAddr, mrbusAddr);
   
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c-*<;>r\n", multiThrottleLetter);
   this->rxtx(cmdBuffer);
 
+  // Invalidate the function states
+  tState->locFunctionsGood = false;
+
   char longShort = isLongAddr?'L':'S';
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c+%c%d<;>%c%d\n", multiThrottleLetter, longShort, addr, longShort, addr);
   this->rxtx(cmdBuffer);
  
-  // FIXME:  Wait for function statuses from command station
+  PeriodicEvent functionWait;
 
+  functionWait.setup(250); // Wait up to 250ms for functions, just for fun - that seems a reasonable stall
+  // Wait for function statuses from command station
+  while (!tState->locFunctionsGood && !functionWait.test());
 
   // If track power is off, turn it back on
   if (this->trackPowerOn = false)
@@ -243,6 +285,10 @@ bool WiThrottle::locomotiveEmergencyStop(ThrottleState* tState)
   char cmdBuffer[32];
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>X\n", ((WiThrottleLocRef*)(tState->locCmdStnRef))->multiThrottleLetter);
   this->rxtx(cmdBuffer);
+
+  tState->locEStop = true;
+  tState->locSpeed = 0;
+
   return true;
 }
 
@@ -263,6 +309,11 @@ bool WiThrottle::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, bool i
   // Direction is 0=REV, 1=FWD on WiThrottle
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>R%d\n", locCmdStnRef->multiThrottleLetter, isReverse?0:1);
   this->rxtx(cmdBuffer);
+
+  tState->locSpeed = speed;
+  tState->locRevDirection = isReverse;
+  tState->locEStop = false; // We're asked to send a speed, so can't be in estop any more
+
   return true;
 }
 
@@ -280,6 +331,10 @@ bool WiThrottle::locomotiveFunctionSetJMRI(ThrottleState* tState, uint8_t funcNu
   char cmdBuffer[32];
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>f%d%d\n", locCmdStnRef->multiThrottleLetter, funcActive?1:0, funcNum);
   this->rxtx(cmdBuffer);
+
+  // Because we issued a "force" command, go ahead and just set it proactively
+  tState->locFunctions[funcNum] = funcActive;
+
   return true;
 }
 
@@ -294,18 +349,31 @@ bool WiThrottle::locomotiveFunctionSetLNWI(ThrottleState* tState, uint8_t funcNu
     // And of course function 2 is weird - it's non-latching, all others are latching
     snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>F%d%d\n", locCmdStnRef->multiThrottleLetter, funcActive?1:0, funcNum);
     this->rxtx(cmdBuffer);
+    tState->locFunctions[funcNum] = funcActive;
+
   } else {
-    if (1)
+    if (tState->locFunctions[funcNum] != funcActive)
     {
       // Except for F2, toggle the function button to change its date
       snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>F1%d\n", locCmdStnRef->multiThrottleLetter, funcNum);
       this->rxtx(cmdBuffer);
       snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>F0%d\n", locCmdStnRef->multiThrottleLetter, funcNum);
       this->rxtx(cmdBuffer);
-
+      // Assume we changed it?
+      tState->locFunctions[funcNum] = funcActive;
     }
   }
   return true;
+}
+
+ThrottleState *WiThrottle::getThrottleStateForMultiThrottleLetter(uint8_t letter)
+{
+  const char* ptr = strchr(this->validThrottleLetters, letter);
+
+  if (NULL == ptr || (ptr - this->validThrottleLetters) >= MAX_THROTTLES)
+    return NULL;
+  
+  return this->throttleStates[ptr - this->validThrottleLetters];
 }
 
 bool WiThrottle::locomotiveFunctionSet(ThrottleState* tState, uint8_t funcNum, bool funcActive)

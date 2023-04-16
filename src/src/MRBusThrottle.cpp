@@ -114,18 +114,15 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
   }
 
   // Only send estop if we just moved into that state
-  if (estop && !this->tState.locEStop)
+  if (estop)
   {
-    cmdStn->locomotiveEmergencyStop(&this->tState);
-    this->tState.locEStop = estop;
-    this->tState.locSpeed = 0;
+    // If we're not currently in estop, put us there
+    if (!this->tState.locEStop)
+      cmdStn->locomotiveEmergencyStop(&this->tState);
   }
-
-  if (!this->tState.locEStop && (speed != this->tState.locSpeed || reverse != this->tState.locRevDirection))
+  else if (speed != this->tState.locSpeed || reverse != this->tState.locRevDirection)
   {
     cmdStn->locomotiveSpeedSet(&this->tState, speed, reverse);
-    this->tState.locSpeed = speed;
-    this->tState.locRevDirection = reverse;
   }
 
   if (!this->tState.locFunctionsGood)
@@ -146,7 +143,7 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
     {
       // FIXME:  Send command station update
       cmdStn->locomotiveFunctionSet(&this->tState, i, updateFunctions[i]);
-      this->tState.locFunctions[i] = updateFunctions[i];
+
     }
   }
   //Serial.printf("Locomotive %d updated\n", this->locAddr);

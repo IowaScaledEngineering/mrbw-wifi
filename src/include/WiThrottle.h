@@ -17,6 +17,7 @@ class WiThrottleLocRef : public CmdStnLocRef
 class WiThrottle : public CommandStation
 {
   private:
+    const char *validThrottleLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     WiFiClient *cmdStnConnection;
     bool lnwiMode;
     uint8_t* rxBuffer;
@@ -24,15 +25,18 @@ class WiThrottle : public CommandStation
     PeriodicEvent keepaliveTimer;
     bool trackPowerOn;
     uint32_t keepaliveMaxInterval;
+    ThrottleState* throttleStates[MAX_THROTTLES];
     bool locomotiveFunctionSetJMRI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
     bool locomotiveFunctionSetLNWI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
+    ThrottleState* getThrottleStateForMultiThrottleLetter(uint8_t letter);
+
 
   public:
     WiThrottle();
     ~WiThrottle();
     void rxtx();
     void rxtx(const char * cmdStr);
-    uint8_t getMultiThrottleLetter(uint8_t mrbusAddr);
+    uint8_t getMultiThrottleLetter(uint8_t mrbusAddr, ThrottleState *tState);
     void releaseMultiThrottleLetter(uint8_t mrbusAddr);
     void processResponse(const uint8_t* rxData, uint32_t rxDataLen);
     bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags);
