@@ -24,6 +24,8 @@ class WiThrottle : public CommandStation
     PeriodicEvent keepaliveTimer;
     bool trackPowerOn;
     uint32_t keepaliveMaxInterval;
+    bool locomotiveFunctionSetJMRI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
+    bool locomotiveFunctionSetLNWI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
 
   public:
     WiThrottle();
@@ -36,10 +38,11 @@ class WiThrottle : public CommandStation
     bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags);
     bool end();
     bool update();
-    bool locomotiveObjectGet(CmdStnLocRef** locCmdStnRef, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr);
-    bool locomotiveEmergencyStop(CmdStnLocRef* locCmdStnRef);
-    bool locomotiveSpeedSet(CmdStnLocRef* locCmdStnRef, uint8_t speed, bool isReverse);
-    bool locomotiveFunctionsGet(CmdStnLocRef* locCmdStnRef, bool functionStates[]);
-    bool locomotiveFunctionSet(CmdStnLocRef* locCmdStnRef, uint8_t funcNum, bool funcActive);
-    bool locomotiveDisconnect(CmdStnLocRef* locCmdStnRef);
+    bool locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr);
+    bool locomotiveEmergencyStop(ThrottleState* tState);
+    bool locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, bool isReverse);
+    bool locomotiveFunctionsGet(ThrottleState* tState, bool functionStates[]);
+
+    bool locomotiveFunctionSet(ThrottleState* tState, uint8_t funcNum, bool funcActive);
+    bool locomotiveDisconnect(ThrottleState* tState);
 };

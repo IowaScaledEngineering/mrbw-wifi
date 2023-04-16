@@ -1,29 +1,22 @@
 #pragma once
+
 #include <stddef.h>
 #include <stdint.h>
 #include "commonFuncs.h"
 #include "CommandStation.h"
+#include "ThrottleState.h"
 #include "mrbus.h"
 
 class MRBusThrottle
 {
     private:
-      bool active;
+      ThrottleState tState;
       uint8_t throttleAddr;
-      uint16_t locAddr;
-      bool isLongAddr;
-      uint8_t locSpeed;
-      bool locRevDirection;
-      bool locEStop;
-      bool locFunctions[MAX_FUNCTIONS];
-      bool locFunctionsGood;
-      uint64_t lastUpdate;
-      bool isCmdStnReferenceValid;
-      CmdStnLocRef *locCmdStnReference;
 
     public:
         MRBusThrottle();
         ~MRBusThrottle();
+        CmdStnLocRef *getCmdStnRef();
         void initialize(uint8_t mrbusAddr);
         uint8_t mrbusAddrGet();
         bool isActive();

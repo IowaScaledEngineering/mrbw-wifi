@@ -12,6 +12,8 @@
 #define MRBUS_PKT_TYPE  5
 #define MRBUS_PKT_SUBTYPE 6
 
+#define MRBUS_PKT_DATA_LEN  15
+
 class MRBusPacket
 {
   private:
@@ -21,7 +23,8 @@ class MRBusPacket
     uint8_t dest;
     uint8_t len;
     uint16_t crc;
-    uint8_t data[15];
+    uint8_t data[MRBUS_PKT_DATA_LEN];
+    
 
     MRBusPacket();
     bool fromBuffer(uint8_t* buffer, uint8_t bufferSz);

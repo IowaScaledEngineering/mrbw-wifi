@@ -1,20 +1,11 @@
-#include "MRBusThrottle.h"
 #include "Arduino.h"
+#include "MRBusThrottle.h"
+
+
 MRBusThrottle::MRBusThrottle()
 {
-  this->active = false;
+  this->tState.init();
   this->throttleAddr = 0x00;
-  this->locAddr = 0;
-  this->isLongAddr = false;
-  this->locSpeed = 0;
-  this->locRevDirection = false;
-  this->locEStop = false;
-  for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
-    this->locFunctions[i] = false;
-
-  this->locFunctionsGood = false;
-  this->lastUpdate = 0;
-  this->isCmdStnReferenceValid = false;
 }
 
 MRBusThrottle::~MRBusThrottle()
@@ -23,19 +14,8 @@ MRBusThrottle::~MRBusThrottle()
 
 void MRBusThrottle::initialize(uint8_t mrbusAddr)
 {
-  this->active = false;
+  this->tState.init();
   this->throttleAddr = mrbusAddr;
-  this->locAddr = 0;
-  this->isLongAddr = false;
-  this->locSpeed = 0;
-  this->locRevDirection = false;
-  this->locEStop = false;
-  for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
-    this->locFunctions[i] = false;
-
-  this->locFunctionsGood = false;
-  this->lastUpdate = 0;
-  this->isCmdStnReferenceValid = false;
 }
 
 uint8_t MRBusThrottle::mrbusAddrGet()
@@ -45,13 +25,13 @@ uint8_t MRBusThrottle::mrbusAddrGet()
 
 bool MRBusThrottle::isActive()
 {
-  return this->active;
+  return this->tState.active;
 }
 
 bool MRBusThrottle::isExpired(uint32_t idleSeconds)
 {
   // Make this easy - lastupdate is stored in milliseconds 
-  if (esp_timer_get_time() - this->lastUpdate > idleSeconds * 1000000)
+  if (esp_timer_get_time() - this->tState.lastUpdate > idleSeconds * 1000000)
     return true;
   return false;
 }
@@ -59,7 +39,7 @@ bool MRBusThrottle::isExpired(uint32_t idleSeconds)
 // Release just releases the current engine number
 bool MRBusThrottle::release(CommandStation* cmdStn)
 {
-  Serial.printf("Locomotive %c:%d released\n", this->isLongAddr?'L':'S', this->locAddr);
+  Serial.printf("Locomotive %c:%d released\n", this->tState.isLongAddr?'L':'S', this->tState.locAddr);
   return true;
 }
 
@@ -68,7 +48,7 @@ bool MRBusThrottle::release(CommandStation* cmdStn)
 //  mark the throttle as inactive
 bool MRBusThrottle::disconnect(CommandStation* cmdStn)
 {
-  cmdStn->locomotiveSpeedSet(this->locCmdStnReference, 0, false);
+  cmdStn->locomotiveDisconnect(&this->tState);
   this->release(cmdStn);
   this->initialize(this->throttleAddr);
   return true;
@@ -78,6 +58,22 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
 {
   bool updateFunctions[MAX_FUNCTIONS];
 
+// MRBus Throttle Packet Definition
+// Data 0: 'S' (Status)
+// Data 1: High 8 bits of locomotive address
+// Data 2: Low 8 bits of locomotive address
+// Data 3:
+//    Bit 7:    Forward (0x80) / Reverse (0x00)
+//    Bit 0-6:  Speed (0=off, 1=Estop, 2-127 speed)
+// Data 4:
+//    Bit 7:   Reserved
+//    Bit 6:   Reserved
+//    Bit 5:   Reserved
+//    Bit 4:   Reserved
+//    Bit 0-3: F24 (bit 0) - F28 (bit 3)
+// Data 5: F16 (bit 0) - F23 (bit 7)
+// Data 6: F08 (bit 0) - F15 (bit 7)
+// Data 7: F00 (bit 0) - F07 (bit 7)
   if (pkt.len < 10 || 'S' != pkt.data[0])
     return; // Not a status update, ignore
 
@@ -98,54 +94,47 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
 
   bool reverse = (pkt.data[3] & 0x80)?false:true;
 
-  if (addr != this->locAddr || longAddr != this->isLongAddr || false == this->isCmdStnReferenceValid)
+  if (addr != this->tState.locAddr || longAddr != this->tState.isLongAddr || NULL == this->tState.locCmdStnRef)
   {
     // FIXME: If we already have a locomotive, we may need to release it
 
     // Need to acquire locomotive from command station
-    bool successfullyAcquired = cmdStn->locomotiveObjectGet(&this->locCmdStnReference, addr, longAddr, this->throttleAddr);
+    bool successfullyAcquired = cmdStn->locomotiveObjectGet(&this->tState, addr, longAddr, this->throttleAddr);
     if (!successfullyAcquired)
     {
       //FIXME:  We didn't successfully acquire, clean house
-      this->isCmdStnReferenceValid = false;
-      this->locFunctionsGood = false;
-      this->locAddr = 0;
-      this->isLongAddr = false;
-      this->locSpeed = 0;
-      this->locRevDirection = false;
-      this->locEStop = false;
+      this->tState.init();
       return;
     }
-    this->active = true;
-    this->isCmdStnReferenceValid = true;
-    this->locFunctionsGood = false;
-    this->isLongAddr = longAddr;
-    this->locAddr = addr;
-    Serial.printf("Locomotive %c:%d acquired\n", this->isLongAddr?'L':'S', this->locAddr);
+    this->tState.active = true;
+    this->tState.locFunctionsGood = false;
+    this->tState.isLongAddr = longAddr;
+    this->tState.locAddr = addr;
+    Serial.printf("Locomotive %c:%d acquired\n", this->tState.isLongAddr?'L':'S', this->tState.locAddr);
   }
 
   // Only send estop if we just moved into that state
-  if (estop && !this->locEStop)
+  if (estop && !this->tState.locEStop)
   {
-    cmdStn->locomotiveEmergencyStop(this->locCmdStnReference);
-    this->locEStop = estop;
+    cmdStn->locomotiveEmergencyStop(&this->tState);
+    this->tState.locEStop = estop;
+    this->tState.locSpeed = 0;
   }
 
-  if (this->locEStop && (speed != this->locSpeed || reverse != this->locRevDirection))
+  if (!this->tState.locEStop && (speed != this->tState.locSpeed || reverse != this->tState.locRevDirection))
   {
-    cmdStn->locomotiveSpeedSet(this->locCmdStnReference, speed, reverse);
-    this->locSpeed = speed;
-    this->locRevDirection = reverse;
+    cmdStn->locomotiveSpeedSet(&this->tState, speed, reverse);
+    this->tState.locSpeed = speed;
+    this->tState.locRevDirection = reverse;
   }
 
-
-  if (!this->locFunctionsGood)
+  if (!this->tState.locFunctionsGood)
   {
     // FIXME: Fetch current function state from command station
     for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
-      this->locFunctions[i] = false;
+      this->tState.locFunctions[i] = false;
 
-    this->locFunctionsGood = true;
+    this->tState.locFunctionsGood = true;
   }
 
   for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
@@ -153,13 +142,13 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
 
   for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
   {
-    if(updateFunctions[i] != this->locFunctions[i])
+    if(updateFunctions[i] != this->tState.locFunctions[i])
     {
       // FIXME:  Send command station update
-      cmdStn->locomotiveFunctionSet(this->locCmdStnReference, i, updateFunctions[i]);
-      this->locFunctions[i] = updateFunctions[i];
+      cmdStn->locomotiveFunctionSet(&this->tState, i, updateFunctions[i]);
+      this->tState.locFunctions[i] = updateFunctions[i];
     }
   }
   //Serial.printf("Locomotive %d updated\n", this->locAddr);
-  this->lastUpdate = esp_timer_get_time();
+  this->tState.lastUpdate = esp_timer_get_time();
 }

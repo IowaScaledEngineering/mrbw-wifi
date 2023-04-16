@@ -220,7 +220,7 @@ void loop()
             systemState.activeThrottles++;
 
         drawStatusScreen(systemState);
-        Serial.printf("memtask: %d heap free:%d\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize());
+        Serial.printf("memtask: %d heap free:%d Wifi=%c CmdStn=%c\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
 
         // Send version packet
         MRBusPacket versionPkt;
@@ -270,6 +270,7 @@ void loop()
             delay(100);
           }
           Serial.printf("Connected\n");
+          WiFi.setAutoReconnect(true);
         }
       }
 
@@ -312,8 +313,10 @@ void loop()
         if (!systemState.cmdStnIPSetup())
           return;  // No IP found for a command station, on with life - return from loop() and start over
         
-        bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort, 10);
-        
+        Serial.printf("Trying to connect %s %d\n", systemState.cmdStnIP, systemState.cmdStnPort);
+        bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort, 1000);
+        Serial.printf("Connect successful = %c\n", connectSuccessful?'Y':'N');
+
         if (connectSuccessful)
         {
           systemState.isCmdStnConnected = true;
@@ -341,7 +344,6 @@ void loop()
       if (!systemState.isCmdStnConnected || tmrStatusScreenUpdate.test(false))
         return;
 
-
       systemState.cmdStn->update();
 
       // If we're here, we should have a command station connected
@@ -349,17 +351,20 @@ void loop()
       {
         MRBusPacket pkt;
         mrbus.rxPktQueue->pop(pkt);
-        Serial.printf("Pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
+        /*Serial.printf("Pkt [%02x->%02x (%d bytes) ", pkt.src, pkt.dest, pkt.len);
+        for(uint32_t k = 0; k<pkt.len; k++)
+          Serial.printf("%02x ", pkt.data[k]);
+        Serial.printf("]\n");*/
 
         if (pkt.src == systemState.mrbusSrcAddrGet())
         {
           // Ouch, conflicting base station detected
         }
 
-        if (pkt.dest == systemState.mrbusSrcAddrGet() && pkt.data[0] == 'S' && pkt.len == 10 
+        if (pkt.dest == systemState.mrbusSrcAddrGet() && pkt.data[0] == 'S' && pkt.len == 15
           && (pkt.src >= MRBUS_THROTTLE_BASE_ADDR && pkt.src < MRBUS_THROTTLE_BASE_ADDR + MAX_THROTTLES))
         {
-          Serial.printf("Throttle pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
+          //Serial.printf("Throttle pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
           uint8_t throttleNum = pkt.src - MRBUS_THROTTLE_BASE_ADDR;
           throttles[throttleNum].update(systemState.cmdStn, pkt);
         }

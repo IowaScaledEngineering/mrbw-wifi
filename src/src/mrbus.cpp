@@ -143,8 +143,10 @@ bool MRBus::processSerial()
   
   // Error case
   if (bytesRead < 0)
+  {
+    //Serial.printf("bytesRead = %d, bufferUsed=%d\n", bytesRead, this->rxBufferUsed);
     return false;
-
+  }
   this->rxBufferUsed += bytesRead;
 
   // No bytes?  Get out!
@@ -216,11 +218,13 @@ bool MRBus::processSerial()
                 pktDataOffset = 14; // 64 bit addressing
               else if (0x81 == xBeePkt[3])
                 pktDataOffset = 8; // 16 bit addressing
-
+              //Serial.printf("Good checkum, pktDataOffset=%d\n", pktDataOffset);
               if(pktDataOffset)
               {
                 MRBusPacket pkt;
                 bool goodPacket = pkt.fromBuffer(xBeePkt + pktDataOffset, xBeePktLen - pktDataOffset);
+                //Serial.printf("Good packet, offset=%d, dest=%02x, pktQueueFull=%s\n", pktDataOffset, pkt.dest, this->rxPktQueue->isFull()?"true":"false");
+                //Serial.printf("MRBee: RX Pkt [%02x->%02x len=%d]\n", pkt.src, pkt.dest, pkt.len);
                 if (goodPacket && (pkt.dest == this->addr || pkt.dest == 0xFF) && !this->rxPktQueue->isFull())
                   this->rxPktQueue->push(pkt);
               }
@@ -236,11 +240,11 @@ bool MRBus::processSerial()
         break;
     }
   }
-  //Serial.printf("]\n");
+//  Serial.printf("]\n");
   this->rxBufferUsed = endPtr - startOfUnprocessedData;
   if (this->rxBufferUsed) // If there's any bytes left over, move them up in the buffer
   {
-    //Serial.printf("Saving off %d bytes\n", this->rxBufferUsed);
+    Serial.printf("Saving off %d bytes\n", this->rxBufferUsed);
     memmove(this->rxBuffer, startOfUnprocessedData, this->rxBufferUsed);
   }
 
@@ -253,7 +257,7 @@ MRBusPacket::MRBusPacket()
   this->dest = 0xFF;
   this->len = 0;
   this->crc = 0;
-  memset(this->data, 0, sizeof(this->data));
+  memset(this->data, 0, MRBUS_PKT_DATA_LEN);
 }
 
 MRBusPacket& MRBusPacket::operator=(const MRBusPacket& c)
@@ -262,7 +266,7 @@ MRBusPacket& MRBusPacket::operator=(const MRBusPacket& c)
   this->dest = c.dest;
   this->len = c.len;
   this->crc = c.crc;
-  memcpy(this->data, c.data, sizeof(this->data));
+  memcpy(this->data, c.data, MRBUS_PKT_DATA_LEN);
   return *this;
 }
 
@@ -273,10 +277,10 @@ bool MRBusPacket::fromBuffer(uint8_t* buffer, uint8_t bufferSz)
 
   this->src = buffer[MRBUS_PKT_SRC];
   this->dest = buffer[MRBUS_PKT_DEST];
-  this->len = (5+sizeof(this->data))<buffer[MRBUS_PKT_LEN] ? (sizeof(this->data)):buffer[MRBUS_PKT_LEN]-5;
+  this->len = buffer[MRBUS_PKT_LEN] > (5+MRBUS_PKT_DATA_LEN) ? (MRBUS_PKT_DATA_LEN):buffer[MRBUS_PKT_LEN];
   this->crc = (((uint16_t)buffer[MRBUS_PKT_CRC_H])<<8) | buffer[MRBUS_PKT_CRC_L];
 
-  memset(this->data, 0, sizeof(this->data));
+  memset(this->data, 0, MRBUS_PKT_DATA_LEN);
   for (int i=0; i<this->len-5; i++)
     this->data[i] = buffer[i+5];
 

@@ -22,35 +22,35 @@ bool ESUCabControl::update()
   return true;
 }
 
-bool ESUCabControl::locomotiveObjectGet(CmdStnLocRef** locCmdStnRef, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr)
+bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr)
 {
-  *locCmdStnRef = new CmdStnLocRef(addr, isLongAddr, mrbusAddr);
+  tState->locCmdStnRef = new CmdStnLocRef(addr, isLongAddr, mrbusAddr);
   return true;
 }
 
-bool ESUCabControl::locomotiveEmergencyStop(CmdStnLocRef* locCmdStnRef)
-{
-  return true;
-}
-
-bool ESUCabControl::locomotiveSpeedSet(CmdStnLocRef* locCmdStnRef, uint8_t speed, bool isReverse)
+bool ESUCabControl::locomotiveEmergencyStop(ThrottleState* tState)
 {
   return true;
 }
 
-bool ESUCabControl::locomotiveFunctionsGet(CmdStnLocRef* locCmdStnRef, bool functionStates[])
+bool ESUCabControl::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, bool isReverse)
 {
   return true;
 }
 
-bool ESUCabControl::locomotiveFunctionSet(CmdStnLocRef* locCmdStnRef, uint8_t funcNum, bool funcActive)
+bool ESUCabControl::locomotiveFunctionsGet(ThrottleState* tState, bool functionStates[])
 {
   return true;
 }
 
-bool ESUCabControl::locomotiveDisconnect(CmdStnLocRef* locCmdStnRef)
+bool ESUCabControl::locomotiveFunctionSet(ThrottleState* tState, uint8_t funcNum, bool funcActive)
 {
-  delete locCmdStnRef;
+  return true;
+}
+
+bool ESUCabControl::locomotiveDisconnect(ThrottleState* tState)
+{
+  delete (CmdStnLocRef*)tState->locCmdStnRef;
   return true;
 }
 
