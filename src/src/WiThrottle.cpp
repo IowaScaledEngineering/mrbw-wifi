@@ -262,13 +262,17 @@ bool WiThrottle::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool 
 
   // Invalidate the function states
   tState->locFunctionsGood = false;
+  for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
+    tState->locFunctions[i] = false;
+
 
   char longShort = isLongAddr?'L':'S';
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c+%c%d<;>%c%d\n", multiThrottleLetter, longShort, addr, longShort, addr);
   this->rxtx(cmdBuffer);
- 
-  PeriodicEvent functionWait;
+  tState->isLongAddr = isLongAddr;
+  tState->locAddr = addr;
 
+  PeriodicEvent functionWait;
   functionWait.setup(250); // Wait up to 250ms for functions, just for fun - that seems a reasonable stall
   // Wait for function statuses from command station
   while (!tState->locFunctionsGood && !functionWait.test());

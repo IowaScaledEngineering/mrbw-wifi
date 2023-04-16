@@ -106,10 +106,8 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
       this->tState.init();
       return;
     }
+
     this->tState.active = true;
-    this->tState.locFunctionsGood = false;
-    this->tState.isLongAddr = longAddr;
-    this->tState.locAddr = addr;
     Serial.printf("Locomotive %c:%d acquired\n", this->tState.isLongAddr?'L':'S', this->tState.locAddr);
   }
 
@@ -125,15 +123,6 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
     cmdStn->locomotiveSpeedSet(&this->tState, speed, reverse);
   }
 
-  if (!this->tState.locFunctionsGood)
-  {
-    // FIXME: Fetch current function state from command station
-    for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
-      this->tState.locFunctions[i] = false;
-
-    this->tState.locFunctionsGood = true;
-  }
-
   for(uint32_t i=0; i<MAX_FUNCTIONS; i++)
     updateFunctions[i] = pkt.data[7 - (i/8)] & (1<<(i%8))?true:false;
 
@@ -143,7 +132,6 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
     {
       // FIXME:  Send command station update
       cmdStn->locomotiveFunctionSet(&this->tState, i, updateFunctions[i]);
-
     }
   }
   //Serial.printf("Locomotive %d updated\n", this->locAddr);
