@@ -11,7 +11,7 @@
 #define MAX_FUNCTIONS  29
 #define MRBUS_THROTTLE_BASE_ADDR  0x30
 #define THROTTLE_TIMEOUT_SECONDS  30
-
+#define WDT_TIMEOUT    15
 
 
 #ifndef MIN

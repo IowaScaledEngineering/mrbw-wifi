@@ -1,0 +1,4 @@
+Things to do / fix yet:
+ - ESU protocol
+ - Auto command station discovery
+ - Document object model and where crap goes

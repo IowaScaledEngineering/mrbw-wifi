@@ -2,6 +2,7 @@
 #include <Wire.h>
 #include "WiFi.h"
 #include "FFat.h"
+#include "esp_task_wdt.h"
 
 SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 
@@ -51,6 +52,9 @@ void setup()
   Wire.begin();
   mrbus.begin();
 
+  esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
+  esp_task_wdt_add(NULL); //add current thread to WDT watch
+  esp_task_wdt_reset();
   ws2812Set(0x0f0000);
 
   // Initialize the throttle array
@@ -92,10 +96,11 @@ void setup()
   WiFi.disconnect();
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
 
+  esp_task_wdt_reset();
   // Start the display
   display.setup(&Wire, 0x3C);
 
-  ws2812Set(0x000f00);
+  esp_task_wdt_reset();
   tmrStatusScreenUpdate.setup(1000); // Status screen updates every 1s
 }
 
@@ -210,6 +215,10 @@ void loop()
     case STATE_MAIN_LOOP:
       if (tmrStatusScreenUpdate.test(true))
       {
+        uint32_t color = 0x0f0000;
+
+        esp_task_wdt_reset();
+
         systemState.baseAddress = switches.baseAddressGet();
         mrbus.setAddress(systemState.baseAddress + 0xD0); // MRBus address for the base is switches + 0xD0 offset
         systemState.rssi = WiFi.RSSI();
@@ -221,6 +230,13 @@ void loop()
 
         drawStatusScreen(systemState);
         Serial.printf("memtask: %d heap free:%d Wifi=%c CmdStn=%c\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
+
+        if (systemState.isWifiConnected && systemState.isCmdStnConnected)
+          color = 0x000f00;
+        else if (systemState.isWifiConnected)
+          color = 0x0f0f00;
+          
+        ws2812Set(color);
 
         // Send version packet
         MRBusPacket versionPkt;
@@ -257,6 +273,8 @@ void loop()
       if (!systemState.isWifiConnected)
       {
         bool networkFound = systemState.wifiScan();
+        systemState.localIP.fromString("0.0.0.0");
+        systemState.isCmdStnConnected = false;
 
         if (networkFound) // Can either be because search found one or not autconfig
         {
@@ -272,20 +290,23 @@ void loop()
           Serial.printf("Connected\n");
           WiFi.setAutoReconnect(true);
         }
-      }
 
-      if (!systemState.isWifiConnected && WiFi.status() == WL_CONNECTED)
-      {
-        systemState.localIP = WiFi.localIP();
-        systemState.isWifiConnected = true;
-        systemState.isCmdStnConnected = false;
+        // Did we connect?  If so, change our indication to wifi connected and go back around the loop
+        if(WiFi.status() == WL_CONNECTED)
+        {
+          systemState.localIP = WiFi.localIP();
+          systemState.isWifiConnected = true;
+          systemState.isCmdStnConnected = false;
+          return;
+        }
       }
-      else if (systemState.isWifiConnected && WiFi.status() != WL_CONNECTED)
+      else if (WiFi.status() != WL_CONNECTED)  // This implies that systemState.isWifiConnected is true
       {
         systemState.localIP.fromString("0.0.0.0");
         systemState.isWifiConnected = false;
         systemState.isCmdStnConnected = false;
       }
+
 
       if (!systemState.isWifiConnected || tmrStatusScreenUpdate.test(false))
         return; // Out we go - can't do squat without a wifi connection, or maybe we need to do a screen refresh
@@ -313,7 +334,7 @@ void loop()
         if (!systemState.cmdStnIPSetup())
           return;  // No IP found for a command station, on with life - return from loop() and start over
         
-        Serial.printf("Trying to connect %s %d\n", systemState.cmdStnIP, systemState.cmdStnPort);
+        Serial.printf("Trying to connect %s:%d\n", systemState.cmdStnIP.toString().c_str(), systemState.cmdStnPort);
         bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort, 1000);
         Serial.printf("Connect successful = %c\n", connectSuccessful?'Y':'N');
 
