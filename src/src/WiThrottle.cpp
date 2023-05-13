@@ -233,6 +233,13 @@ bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags)
 bool WiThrottle::end()
 {
   this->cmdStnConnection = NULL;
+  // Nuke the command station connection pointer
+  for(uint32_t i; i<MAX_THROTTLES; i++)
+  {
+    if (NULL != this->throttleStates[i])
+      free(this->throttleStates[i]);
+    this->throttleStates[i] = NULL;
+  }
   return true;
 }
 
@@ -311,7 +318,7 @@ bool WiThrottle::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, bool i
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>V%d\n", locCmdStnRef->multiThrottleLetter, speed);
   this->rxtx(cmdBuffer);
   // Direction is 0=REV, 1=FWD on WiThrottle
-  snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>R%d\n", locCmdStnRef->multiThrottleLetter, isReverse?0:1);
+  snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>R%d\n", locCmdStnRef->multiThrottleLetter, isReverse?1:0);
   this->rxtx(cmdBuffer);
 
   tState->locSpeed = speed;
@@ -397,9 +404,16 @@ bool WiThrottle::locomotiveDisconnect(ThrottleState* tState)
   {
     snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c-*<;>r\n", locCmdStnRef->multiThrottleLetter);
     this->rxtx(cmdBuffer);
+    snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c-*<;>d\n", locCmdStnRef->multiThrottleLetter);
+    this->rxtx(cmdBuffer);
+
     this->releaseMultiThrottleLetter(locCmdStnRef->mrbusAddr);
     delete locCmdStnRef;
     tState->locCmdStnRef = NULL;
+    tState->locAddr = 0;
+    tState->isLongAddr = false;
+    tState->locSpeed = 0;
+    tState->locRevDirection = false;
   }
   return true;
 }

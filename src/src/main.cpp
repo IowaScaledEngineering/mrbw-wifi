@@ -304,6 +304,11 @@ void loop()
       {
         systemState.localIP.fromString("0.0.0.0");
         systemState.isWifiConnected = false;
+        if (systemState.isCmdStnConnected)
+        {
+            systemState.cmdStn->end();
+            delete systemState.cmdStn;
+        }
         systemState.isCmdStnConnected = false;
       }
 
@@ -316,7 +321,6 @@ void loop()
         // Just make sure we're really still connected
         if (!systemState.cmdStnConnection.connected())
         {
-          
           if (NULL != systemState.cmdStn)
           {
             systemState.cmdStn->end();
@@ -341,8 +345,9 @@ void loop()
         if (connectSuccessful)
         {
           systemState.isCmdStnConnected = true;
+          // Nuke any throttles that may be left over from last time.
+
           // Create command station object
-          
           switch(systemState.cmdStnType)
           {
             case CMDSTN_JMRI:

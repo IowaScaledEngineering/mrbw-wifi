@@ -1,4 +1,5 @@
 Things to do / fix yet:
  - ESU protocol
- - Auto command station discovery
+ - Auto command station IP discovery (mdns / port scan)
  - Document object model and where crap goes
+  - Reinitialize throttle->cmd station when connection drops

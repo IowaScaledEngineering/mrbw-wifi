@@ -96,7 +96,13 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
 
   if (addr != this->tState.locAddr || longAddr != this->tState.isLongAddr || NULL == this->tState.locCmdStnRef)
   {
-    // FIXME: If we already have a locomotive, we may need to release it
+    if (NULL != this->tState.locCmdStnRef)
+    {
+      // Need to release the old one
+      cmdStn->locomotiveDisconnect(&this->tState);
+    }
+
+
 
     // Need to acquire locomotive from command station
     bool successfullyAcquired = cmdStn->locomotiveObjectGet(&this->tState, addr, longAddr, this->throttleAddr);
