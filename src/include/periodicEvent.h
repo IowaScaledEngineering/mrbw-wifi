@@ -14,5 +14,6 @@ class PeriodicEvent
         ~PeriodicEvent();
         void setup(uint16_t interval_ms);
         void reset();
+        void debug();
         bool test(bool autoReset = false);
 };

@@ -9,7 +9,7 @@
 class ESUCCLocRef : public CmdStnLocRef
 {
   public:
-    uint32_t objID;
+    int32_t objID;
     using CmdStnLocRef::CmdStnLocRef;
     ESUCCLocRef(uint16_t locAddr, bool isLongAddr, uint8_t mrbusAddr, uint32_t objID);
 };
@@ -25,6 +25,11 @@ class ESUCabControl : public CommandStation
     bool trackPowerOn;
     uint32_t keepaliveMaxInterval;
     ThrottleState* throttleStates[MAX_THROTTLES];
+    int32_t queryLocomotiveObjectGet(uint16_t locAddr);
+    int32_t queryAddLocomotiveObject(uint16_t locAddr);
+    bool queryAcquireLocomotiveObject(int32_t objID);
+    bool queryReleaseLocomotiveObject(int32_t objID);
+    int32_t query(const char *queryStr, char **replyBuffer, int32_t *errCode);
 
   public:
     ESUCabControl();
@@ -33,7 +38,8 @@ class ESUCabControl : public CommandStation
     bool end();
     bool update();
     void rxtx();
-    void rxtx(const char* cmdStr);
+    void rxtx(const char *cmdStr);
+
     bool locomotiveObjectGet(ThrottleState *locCmdStnRef, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr);
     bool locomotiveEmergencyStop(ThrottleState* locCmdStnRef);
     bool locomotiveSpeedSet(ThrottleState* locCmdStnRef, uint8_t speed, bool isReverse);

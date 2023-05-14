@@ -16,11 +16,18 @@ void PeriodicEvent::setup(uint16_t interval_ms)
   
   this->interval_us = interval_ms * 1000;
   this->nextEvent = esp_timer_get_time() + this->interval_us;
+  this->eventTriggered = false;
 }
 
 void PeriodicEvent::reset()
 {
   this->nextEvent = esp_timer_get_time() + this->interval_us;
+  this->eventTriggered = false;
+}
+
+void PeriodicEvent::debug()
+{
+  Serial.printf("nextEvent=%lld now=%lld interval_us=%u\n", this->nextEvent, esp_timer_get_time(), this->interval_us);
 }
 
 bool PeriodicEvent::test(bool autoReset)

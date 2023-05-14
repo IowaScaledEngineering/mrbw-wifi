@@ -259,9 +259,11 @@ bool SystemState::cmdStnIPSetup()
     return true;
   }
 
-  if (CMDSTN_LNWI == this->cmdStnType)
+  if (CMDSTN_LNWI == this->cmdStnType
+    || (CMDSTN_ESU == this->cmdStnType && 0 == strcmp(this->ssid, "ESUWIFI")))
   {
     // LNWIs are always on .1
+    // Same for ESU CabControls if we're talking to its wifi network
     // Take our IP, make it a.b.c.1 and return it
     this->cmdStnIP = this->localIP;
     this->cmdStnIP[3] = 1;

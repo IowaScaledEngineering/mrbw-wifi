@@ -102,8 +102,6 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
       cmdStn->locomotiveDisconnect(&this->tState);
     }
 
-
-
     // Need to acquire locomotive from command station
     bool successfullyAcquired = cmdStn->locomotiveObjectGet(&this->tState, addr, longAddr, this->throttleAddr);
     if (!successfullyAcquired)

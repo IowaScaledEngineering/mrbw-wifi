@@ -287,7 +287,7 @@ void loop()
           {
             delay(100);
           }
-          Serial.printf("Connected\n");
+          Serial.printf("Connected to wifi network\n");
           WiFi.setAutoReconnect(true);
         }
 
