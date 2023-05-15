@@ -71,15 +71,13 @@ I2CDisplay::~I2CDisplay()
 
 bool I2CDisplay::sendCmdList(const uint8_t* cmdStr, uint32_t cmdStrSz)
 {
-    uint32_t bytesWritten = 0;
-
     this->i2c->beginTransmission(this->addr);
     this->i2c->write(0x00); // Command stream
     while (cmdStrSz--)
     {
         this->i2c->write(*cmdStr++);
     }
-    uint32_t retval = this->i2c->endTransmission();
+    this->i2c->endTransmission();
     return true;
 }
 

@@ -189,6 +189,9 @@ const char* SystemState::wifiSecurityTypeToString(wifi_auth_mode_t e)
     case WIFI_AUTH_WPA3_PSK:
       encType = "WPA3_PSK";
       break;
+    default: // Unknown - why are we here?
+      encType = "UNKNOWN";
+      break;
   }
   return encType;
 }
@@ -368,7 +371,7 @@ bool SystemState::wifiScan()
       this->cmdStnType = CMDSTN_JMRI;
       strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
       if (auth != WIFI_AUTH_OPEN)
-        snprintf(this->password, sizeof(this->password), "PASS_", ssid.c_str()+6);
+        snprintf(this->password, sizeof(this->password), "PASS_%s", ssid.c_str()+6);
       // FIXME: Set the IP
       if (0 == (uint32_t)this->cmdStnIP)
         this->cmdStnSuggestedIP.fromString("192.168.4.1");

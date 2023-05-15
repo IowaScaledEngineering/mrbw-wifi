@@ -19,7 +19,7 @@ SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 #include "MRBusThrottle.h"
 #include "WiThrottle.h"
 #include "ESUCabControl.h"
-
+#include "esp32s2/rom/rtc.h"
 
 #define PIN_SDA  33
 #define PIN_SCL  34
@@ -42,10 +42,34 @@ typedef enum
 loopState_t mainLoopState = STATE_STARTUP;
 PeriodicEvent tmrStatusScreenUpdate;
 PeriodicEvent tmrSplashScreen;
+int resetReason = 0;
+void verbose_print_reset_reason(int reason)
+{
+  switch ( reason)
+  {
+    case 1  : Serial.println ("Vbat power on reset");break;
+    case 3  : Serial.println ("Software reset digital core");break;
+    case 4  : Serial.println ("Legacy watch dog reset digital core");break;
+    case 5  : Serial.println ("Deep Sleep reset digital core");break;
+    case 6  : Serial.println ("Reset by SLC module, reset digital core");break;
+    case 7  : Serial.println ("Timer Group0 Watch dog reset digital core");break;
+    case 8  : Serial.println ("Timer Group1 Watch dog reset digital core");break;
+    case 9  : Serial.println ("RTC Watch dog Reset digital core");break;
+    case 10 : Serial.println ("Instrusion tested to reset CPU");break;
+    case 11 : Serial.println ("Time Group reset CPU");break;
+    case 12 : Serial.println ("Software reset CPU");break;
+    case 13 : Serial.println ("RTC Watch dog Reset CPU");break;
+    case 14 : Serial.println ("for APP CPU, reseted by PRO CPU");break;
+    case 15 : Serial.println ("Reset when the vdd voltage is not stable");break;
+    case 16 : Serial.println ("RTC Watch dog reset digital core and rtc module");break;
+    default : Serial.println ("NO_MEAN");
+  }
+}
 
 void setup() 
 {
   Serial.begin();
+  resetReason = rtc_get_reset_reason(0);
   switches.setup();
   Wire.setPins(PIN_SDA, PIN_SCL);
   Wire.setClock(400000UL);
@@ -216,9 +240,10 @@ void loop()
       if (tmrStatusScreenUpdate.test(true))
       {
         uint32_t color = 0x0f0000;
-
         esp_task_wdt_reset();
 
+        Serial.printf("%us memtask: %d heap free:%d Wifi=%c CmdStn=%c\n", (uint32_t)(esp_timer_get_time() / 1000000), uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
+        //verbose_print_reset_reason(resetReason);
         systemState.baseAddress = switches.baseAddressGet();
         mrbus.setAddress(systemState.baseAddress + 0xD0); // MRBus address for the base is switches + 0xD0 offset
         systemState.rssi = WiFi.RSSI();
@@ -229,7 +254,6 @@ void loop()
             systemState.activeThrottles++;
 
         drawStatusScreen(systemState);
-        Serial.printf("memtask: %d heap free:%d Wifi=%c CmdStn=%c\n", uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
 
         if (systemState.isWifiConnected && systemState.isCmdStnConnected)
           color = 0x000f00;
@@ -312,7 +336,6 @@ void loop()
         systemState.isCmdStnConnected = false;
       }
 
-
       if (!systemState.isWifiConnected || tmrStatusScreenUpdate.test(false))
         return; // Out we go - can't do squat without a wifi connection, or maybe we need to do a screen refresh
 
@@ -323,14 +346,15 @@ void loop()
         {
           if (NULL != systemState.cmdStn)
           {
-            systemState.cmdStn->end();
-            delete systemState.cmdStn;
+            Serial.printf("Deleting disconnected command station\n\n");
+            //systemState.cmdStn->end();
+            //delete systemState.cmdStn;
           }
+          Serial.printf("Stopping socket connection\n\n");
           systemState.cmdStnConnection.stop();
           systemState.isCmdStnConnected = false;
         }
       }
-
 
       if (!systemState.isCmdStnConnected)
       {
@@ -362,9 +386,10 @@ void loop()
               systemState.cmdStn = new ESUCabControl;
               systemState.cmdStn->begin(systemState.cmdStnConnection, 0);
               break;
+            default: // Do nothing, don't know what it is
+              break;
           }
         }
-
       }
 
       if (!systemState.isCmdStnConnected || tmrStatusScreenUpdate.test(false))
@@ -390,7 +415,7 @@ void loop()
         if (pkt.dest == systemState.mrbusSrcAddrGet() && pkt.data[0] == 'S' && pkt.len == 15
           && (pkt.src >= MRBUS_THROTTLE_BASE_ADDR && pkt.src < MRBUS_THROTTLE_BASE_ADDR + MAX_THROTTLES))
         {
-          //Serial.printf("Throttle pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
+//          Serial.printf("Throttle pkt [%02x->%02x  %02d]\n", pkt.src, pkt.dest, pkt.len);
           uint8_t throttleNum = pkt.src - MRBUS_THROTTLE_BASE_ADDR;
           throttles[throttleNum].update(systemState.cmdStn, pkt);
         }

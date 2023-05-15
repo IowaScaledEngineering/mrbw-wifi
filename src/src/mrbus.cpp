@@ -333,7 +333,6 @@ uint16_t MRBusPacket::crc16Update(uint16_t crc, uint8_t a)
   };
 
   uint8_t t = 0;
-  uint8_t i = 0;
   uint8_t w = 0;
   uint8_t crc16_high = (crc >> 8) & 0xFF;
   uint8_t crc16_low = crc & 0xFF;

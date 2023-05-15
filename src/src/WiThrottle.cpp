@@ -9,7 +9,7 @@ WiThrottle::WiThrottle()
   memset(this->rxBuffer, 0, WITHROTTLE_RX_BUFFER_SZ);
   this->rxBufferUsed = 0;
   this->keepaliveTimer.setup(10000);
-  for(uint32_t i; i<MAX_THROTTLES; i++)
+  for(uint32_t i=0; i<MAX_THROTTLES; i++)
     this->throttleStates[i] = NULL;
 }
 
@@ -234,7 +234,7 @@ bool WiThrottle::end()
 {
   this->cmdStnConnection = NULL;
   // Nuke the command station connection pointer
-  for(uint32_t i; i<MAX_THROTTLES; i++)
+  for(uint32_t i=0; i<MAX_THROTTLES; i++)
   {
     if (NULL != this->throttleStates[i])
       free(this->throttleStates[i]);
@@ -285,7 +285,7 @@ bool WiThrottle::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool 
   while (!tState->locFunctionsGood && !functionWait.test());
 
   // If track power is off, turn it back on
-  if (this->trackPowerOn = false)
+  if (false == this->trackPowerOn)
     this->rxtx("PPA1\n");
 
   return true;

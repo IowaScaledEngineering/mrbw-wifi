@@ -50,10 +50,10 @@ static int32_t onWrite(uint32_t lba, uint32_t offset, uint8_t* buffer, uint32_t 
     //HWSerial.printf("MSC WRITE: memcpy startingOffset=%u, bytesWritten=%u bytesToCopy=%u\r\n", startingOffset, bytesWritten, bytesToCopy);
     memcpy(cache + startingOffset, buffer + bytesWritten, bytesToCopy);
 
-    esp_err_t err = esp_partition_erase_range(p, currentFlashBase, FLASH_BLOCK_SIZE);
+    esp_partition_erase_range(p, currentFlashBase, FLASH_BLOCK_SIZE);
     //HWSerial.printf("MSC WRITE: erase returned %s\r\n", esp_err_to_name(err));
 
-    err = esp_partition_write(p, currentFlashBase, cache, FLASH_BLOCK_SIZE);
+    esp_partition_write(p, currentFlashBase, cache, FLASH_BLOCK_SIZE);
     fsDirty = true;
     //HWSerial.printf("MSC WRITE: write returned %s\r\n", esp_err_to_name(err));
     bytesWritten += bytesToCopy;
@@ -71,7 +71,7 @@ static int32_t onRead(uint32_t lba, uint32_t offset, void* buffer, uint32_t bufs
   uint32_t actualOffset = lba *  DISK_BLOCK_SIZE + offset;
 
   //HWSerial.printf("MSC READ: lba: %u, offset: %u, bufsize: %u\r\n", lba, offset, bufsize);
-  esp_err_t err = esp_partition_read(p, actualOffset, buffer, bufsize);
+  esp_partition_read(p, actualOffset, buffer, bufsize);
   //HWSerial.printf("MSC READ: read returned %s\r\n", esp_err_to_name(err));
   return bufsize;
 }

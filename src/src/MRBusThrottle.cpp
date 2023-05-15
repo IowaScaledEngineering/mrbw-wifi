@@ -134,10 +134,9 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
   {
     if(updateFunctions[i] != this->tState.locFunctions[i])
     {
-      // FIXME:  Send command station update
       cmdStn->locomotiveFunctionSet(&this->tState, i, updateFunctions[i]);
     }
   }
-  //Serial.printf("Locomotive %d updated\n", this->locAddr);
   this->tState.lastUpdate = esp_timer_get_time();
+  //Serial.printf("Locomotive %d updated at %llu\n", this->tState.locAddr, this->tState.lastUpdate);
 }

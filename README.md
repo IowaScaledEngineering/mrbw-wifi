@@ -3,6 +3,18 @@ Wireless MRBus to WiFi (802.11) Bridge for ProtoThrottles
 
 # Setting up Platform.IO
 
+Install VS Code
+https://code.visualstudio.com/download
+sudo apt install <name>.deb
+
+Open up VS Code, click on the extensions block on the left side (bottom thing, looks like tetris blocks) and search for "PlatformIO IDE" - click install
+
+Go to "Source Control" (third icon down, left side), clone repository, clone from github (up top), log in, search, yada yada....
+
+It'll pop under a window to pick as to where to clone it.  This is the directory that will hold the directory of the project, not the root level where all the files are going to go.  So for example, if you're cloning mrbw-wifi and you want it in /home/ndholmes/data/projects/mrbw-wifi, you'd pick /home/ndholmes/data/projects here 
+
+Once you pick it, it'll pick up on the fact it needs to install some more underlying components, like the Arduino framework
+
 In your user platformio directory (in Windows, typically C:\Users\(username)\.platformio):
 
 Copy the src-platformio/arduino/ise_mrbwwifi_esp32s2 directory to .platformio/packages/framework-arduinoespressif32/variants
