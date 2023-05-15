@@ -28,6 +28,7 @@ class ESUCabControl : public CommandStation
     int32_t queryLocomotiveObjectGet(uint16_t locAddr);
     int32_t queryAddLocomotiveObject(uint16_t locAddr);
     bool queryLocomotiveObjectFunctionGet(int32_t objID, uint8_t funcNum);
+    int32_t queryTrackPowerState();
     bool queryAcquireLocomotiveObject(int32_t objID);
     bool queryLocomotiveObjectSpeedSet(int32_t objID, uint8_t speed, bool isReverse);
     bool queryLocomotiveObjectFunctionSet(int32_t objID, uint8_t funcNum, bool funcVal);
@@ -41,6 +42,7 @@ class ESUCabControl : public CommandStation
     bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags);
     bool end();
     bool update();
+    void flushEvents();
     void rxtx();
     void rxtx(const char *cmdStr);
 

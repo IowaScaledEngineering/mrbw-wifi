@@ -56,6 +56,7 @@ ESUCabControl::ESUCabControl()
 {
   this->debug = false;
   this->cmdStnConnection = NULL;
+  this->trackPowerOn = false;
   this->rxBuffer = new uint8_t[ESUCC_RX_BUFFER_SZ];
   memset(this->rxBuffer, 0, ESUCC_RX_BUFFER_SZ);
   this->rxBufferUsed = 0;
@@ -85,6 +86,13 @@ bool ESUCabControl::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags)
 
   // Set us up to get system-level events
   this->query("request(1, view)", NULL, NULL, 100);
+  // Get our current track power state
+
+  int32_t tpState = this->queryTrackPowerState();
+  if (0 == tpState)
+    this->trackPowerOn = false;
+  else if (1 == tpState)
+    this->trackPowerOn = true;
 
   return true;
 }
@@ -109,13 +117,26 @@ bool ESUCabControl::end()
 bool ESUCabControl::update()
 {
   if (this->keepaliveTimer.test(true))
-    this->query("get(1,status)", NULL, NULL, 100);
+  {
+    int32_t tpState = this->queryTrackPowerState();
+    if (0 == tpState)
+      this->trackPowerOn = false;
+    else if (1 == tpState)
+      this->trackPowerOn = true;
+  }
   else
     this->rxtx();
 
-
-  this->rxtx();
   return true;
+}
+
+// Since we're subscribed to any changes in state to both our locomotives
+//  being controlled and to 
+
+void ESUCabControl::flushEvents()
+{
+
+
 }
 
 
@@ -213,8 +234,8 @@ int32_t ESUCabControl::query(const char* queryStr, char** replyBuffer, int32_t* 
 
     // If we don't have a response yet, go wait for a while and let the CPU go do other things, like
     // say wifi or USB
-    if (NULL == endEndPtr)
-      delayMicroseconds(100);
+//    if (NULL == endEndPtr)
+//      delayMicroseconds(100);
 
   }
 
@@ -438,6 +459,60 @@ bool ESUCabControl::queryLocomotiveObjectFunctionGet(int32_t objID, uint8_t func
   return retval;
 }
 
+int32_t ESUCabControl::queryTrackPowerState()
+{
+  char* responseStr = NULL;
+  int32_t responseLen = 0;
+  int32_t errCd = -1;
+  int32_t retval = -1;
+
+  if (this->debug)
+    Serial.printf("ESU queryTrackPowerState\n");
+
+  responseLen = this->query("get(1, status)", &responseStr, &errCd);
+
+  if (responseLen > 0 && NULL != responseStr && 0 == errCd)
+  {
+    char* bolPtr = responseStr;
+    char* eolPtr;
+    while (*bolPtr != 0 && NULL != (eolPtr = strchr(bolPtr, '\n')) && eolPtr < responseStr + responseLen)
+    {
+      if (eolPtr > bolPtr) // If there's something here other than a newline
+      {
+        *eolPtr = 0; // Null terminate in place, don't waste a copy
+
+        if (0 == strcmp("1 status[GO]", bolPtr))
+        {
+          retval = 1;
+          break;
+        }
+        else if (0 == strcmp("1 status[STOP]", bolPtr))
+        {
+          retval = 0;
+          break;
+        }
+      }
+      bolPtr = eolPtr+1;
+    }
+  }
+
+  if (NULL != responseStr)
+    free(responseStr);
+
+  if (this->debug)
+  {
+    if (-1 == errCd)
+      Serial.printf("ESU queryTrackPowerState: TIMED OUT\n");
+    else if (0 != errCd)
+      Serial.printf("ESU queryTrackPowerState: QUERY ERROR  [%d]\n", errCd);
+    else
+      Serial.printf("ESU queryTrackPowerState: %s\n", retval?"ON":"OFF");
+  }
+  return retval;
+}
+
+
+
 bool ESUCabControl::queryAcquireLocomotiveObject(int32_t objID)
 {
   char queryStr[256];
@@ -588,6 +663,10 @@ bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bo
     free(tState->locCmdStnRef);
     tState->locCmdStnRef = NULL;
   }
+
+  // Let's start with if track power is on or not.  If it's off, turn it ON!
+  if (false == this->trackPowerOn)
+    this->query("set(1, go)", NULL, NULL, 100);
 
   int32_t objID = this->queryLocomotiveObjectGet(addr);
 
