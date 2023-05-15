@@ -20,6 +20,7 @@ SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 #include "WiThrottle.h"
 #include "ESUCabControl.h"
 #include "esp32s2/rom/rtc.h"
+#include <ESPmDNS.h>
 
 #define PIN_SDA  33
 #define PIN_SCL  34
@@ -42,34 +43,11 @@ typedef enum
 loopState_t mainLoopState = STATE_STARTUP;
 PeriodicEvent tmrStatusScreenUpdate;
 PeriodicEvent tmrSplashScreen;
-int resetReason = 0;
-void verbose_print_reset_reason(int reason)
-{
-  switch ( reason)
-  {
-    case 1  : Serial.println ("Vbat power on reset");break;
-    case 3  : Serial.println ("Software reset digital core");break;
-    case 4  : Serial.println ("Legacy watch dog reset digital core");break;
-    case 5  : Serial.println ("Deep Sleep reset digital core");break;
-    case 6  : Serial.println ("Reset by SLC module, reset digital core");break;
-    case 7  : Serial.println ("Timer Group0 Watch dog reset digital core");break;
-    case 8  : Serial.println ("Timer Group1 Watch dog reset digital core");break;
-    case 9  : Serial.println ("RTC Watch dog Reset digital core");break;
-    case 10 : Serial.println ("Instrusion tested to reset CPU");break;
-    case 11 : Serial.println ("Time Group reset CPU");break;
-    case 12 : Serial.println ("Software reset CPU");break;
-    case 13 : Serial.println ("RTC Watch dog Reset CPU");break;
-    case 14 : Serial.println ("for APP CPU, reseted by PRO CPU");break;
-    case 15 : Serial.println ("Reset when the vdd voltage is not stable");break;
-    case 16 : Serial.println ("RTC Watch dog reset digital core and rtc module");break;
-    default : Serial.println ("NO_MEAN");
-  }
-}
 
 void setup() 
 {
   Serial.begin();
-  resetReason = rtc_get_reset_reason(0);
+  systemState.resetReason = rtc_get_reset_reason(0);
   switches.setup();
   Wire.setPins(PIN_SDA, PIN_SCL);
   Wire.setClock(400000UL);
@@ -128,7 +106,7 @@ void setup()
   tmrStatusScreenUpdate.setup(1000); // Status screen updates every 1s
 }
 
-void drawSplashScreen()
+void drawSplashScreen(SystemState& state)
 {
   char buffer[32];
   display.clrscr();
@@ -137,6 +115,10 @@ void drawSplashScreen()
   display.putstr("MRBW-WIFI  ", 0, 2);
   snprintf(buffer, sizeof(buffer), "%d.%d.%d %6.6s", MAJOR_VERSION, MINOR_VERSION, DELTA_VERSION, GIT_VERSION);
   display.putstr(buffer, 0, 3);
+  
+  snprintf(buffer, sizeof(buffer)-1, "%02X%02X", state.macAddr[4], state.macAddr[5]);
+  display.putstr(buffer, 15, 4);
+  
   display.drawISELogo();  
   display.refresh();
 }
@@ -225,7 +207,7 @@ void loop()
 
     case STATE_DRAW_SPLASH_SCREEN:
       tmrSplashScreen.setup(2000);
-      drawSplashScreen();
+      drawSplashScreen(systemState);
       tmrSplashScreen.reset();
       mainLoopState = STATE_WAIT_SPLASH_SCREEN;
       break;
@@ -234,6 +216,19 @@ void loop()
       if (tmrSplashScreen.test(false))
       {
         mainLoopState = STATE_MAIN_LOOP;
+
+        // Print a bunch of diagnostic header info to the serial console
+        Serial.printf("Iowa Scaled Engineering\n");
+        Serial.printf("MRBW-WIFI\n");
+        Serial.printf("IDF Ver:  [%s]\n", esp_get_idf_version());
+        Serial.printf("MAC Addr: [%02X:%02X:%02X:%02X:%02X:%02X]\n", 
+          systemState.macAddr[0], systemState.macAddr[1], systemState.macAddr[2],
+          systemState.macAddr[3], systemState.macAddr[4], systemState.macAddr[5]);
+
+        esp_chip_info_t chip_info;
+        esp_chip_info(&chip_info);
+        Serial.printf("ESP32S2 rev %d \n", chip_info.revision);
+        Serial.printf("Reset Reason: [%s]\n", systemState.resetReasonStringGet());
       }
 
     case STATE_MAIN_LOOP:
@@ -243,7 +238,6 @@ void loop()
         esp_task_wdt_reset();
 
         Serial.printf("%us memtask: %d heap free:%d Wifi=%c CmdStn=%c\n", (uint32_t)(esp_timer_get_time() / 1000000), uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
-        //verbose_print_reset_reason(resetReason);
         systemState.baseAddress = switches.baseAddressGet();
         mrbus.setAddress(systemState.baseAddress + 0xD0); // MRBus address for the base is switches + 0xD0 offset
         systemState.rssi = WiFi.RSSI();
@@ -321,6 +315,7 @@ void loop()
           systemState.localIP = WiFi.localIP();
           systemState.isWifiConnected = true;
           systemState.isCmdStnConnected = false;
+          MDNS.begin(systemState.hostname);
           return;
         }
       }
@@ -328,6 +323,7 @@ void loop()
       {
         systemState.localIP.fromString("0.0.0.0");
         systemState.isWifiConnected = false;
+        MDNS.end();
         if (systemState.isCmdStnConnected)
         {
             systemState.cmdStn->end();
@@ -347,8 +343,8 @@ void loop()
           if (NULL != systemState.cmdStn)
           {
             Serial.printf("Deleting disconnected command station\n\n");
-            //systemState.cmdStn->end();
-            //delete systemState.cmdStn;
+            systemState.cmdStn->end();
+            delete systemState.cmdStn;
           }
           Serial.printf("Stopping socket connection\n\n");
           systemState.cmdStnConnection.stop();
@@ -359,7 +355,7 @@ void loop()
       if (!systemState.isCmdStnConnected)
       {
         // Try to build a connection
-        if (!systemState.cmdStnIPSetup())
+        if (!systemState.cmdStnIPSetup())  // Do all the logic about merging configuration with auto-discovery
           return;  // No IP found for a command station, on with life - return from loop() and start over
         
         Serial.printf("Trying to connect %s:%d\n", systemState.cmdStnIP.toString().c_str(), systemState.cmdStnPort);

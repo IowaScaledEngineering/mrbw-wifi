@@ -10,6 +10,7 @@
 #define STRLN_SSID      32
 #define STRLN_PASSwORD  64
 #define STRLN_HOSTNAME  32
+#define MAC_LEN         6
 
 typedef enum
 {
@@ -33,6 +34,8 @@ class SystemState
     char hostname[STRLN_HOSTNAME+1];
     char ssid[STRLN_SSID+1];
     char password[STRLN_PASSwORD+1];
+    uint8_t macAddr[MAC_LEN];
+    int resetReason;
     bool debugWifiEnable;
     bool isAutoNetwork;
     uint16_t cmdStnPort;
@@ -53,7 +56,9 @@ class SystemState
 
     bool configRead(fs::FS &fs);
 
-    const char *wifiSecurityTypeToString(wifi_auth_mode_t e);
+    const char *resetReasonStringGet();
+
+    const char *wifiSecurityTypeStringGet(wifi_auth_mode_t e);
 
     bool cmdStnIPScan();
 

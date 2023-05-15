@@ -1,6 +1,7 @@
 #include "systemState.h"
 #include "commonFuncs.h"
 #include "defaultConfigFile.h"
+#include "ESPmDNS.h"
 
 SystemState::SystemState()
 {
@@ -15,10 +16,16 @@ SystemState::SystemState()
   memset(this->ssid, 0, sizeof(this->ssid));
   memset(this->password, 0, sizeof(this->password));
   memset(this->hostname, 0, sizeof(this->hostname));
-  strncpy(this->hostname, "mrbw-wifi", sizeof(this->hostname));
+
   this->cmdStnPort = 0;
   this->cmdStnIP.fromString("0.0.0.0");
   this->cmdStnType = CMDSTN_NONE;
+
+  memset(this->macAddr, 0, sizeof(this->macAddr));
+  // Get default MAC addr for station-class wifi
+  esp_read_mac(this->macAddr, ESP_MAC_WIFI_STA);
+
+  snprintf(this->hostname, sizeof(this->hostname), "mrbw-wifi-%02X%02x", this->macAddr[4], this->macAddr[5]);
 }
 
 SystemState::~SystemState()
@@ -136,7 +143,11 @@ bool SystemState::configRead(fs::FS &fs)
     }
     else if (0 == strcmp(keyStr, "serverIP"))
     {
-      this->cmdStnIP.fromString((const char*)valueStr);
+      this->cmdStnSuggestedIP.fromString((const char*)valueStr);
+    }
+    else if (0 == strcmp(keyStr, "hostname"))
+    {
+      strncpy(this->hostname, valueStr, sizeof(this->hostname));
     }
   }
 
@@ -157,7 +168,30 @@ bool SystemState::configRead(fs::FS &fs)
   return true;
 }
 
-const char* SystemState::wifiSecurityTypeToString(wifi_auth_mode_t e)
+const char* SystemState::resetReasonStringGet()
+{
+  switch (this->resetReason)
+  {
+    case 1  : return "Vbat power on reset";
+    case 3  : return "Software reset digital core";
+    case 4  : return "Legacy watch dog reset digital core";
+    case 5  : return "Deep Sleep reset digital core";
+    case 6  : return "Reset by SLC module, reset digital core";
+    case 7  : return "Timer Group0 Watch dog reset digital core";
+    case 8  : return "Timer Group1 Watch dog reset digital core";
+    case 9  : return "RTC Watch dog Reset digital core";
+    case 10 : return "Instrusion tested to reset CPU";
+    case 11 : return "Time Group reset CPU";
+    case 12 : return "Software reset CPU";
+    case 13 : return "RTC Watch dog Reset CPU";
+    case 14 : return "for APP CPU, reseted by PRO CPU";
+    case 15 : return "Reset when the vdd voltage is not stable";
+    case 16 : return "RTC Watch dog reset digital core and rtc module";
+    default : return "No Idea";
+  }
+}
+
+const char* SystemState::wifiSecurityTypeStringGet(wifi_auth_mode_t e)
 {
   const char* encType = "UNKNOWN";
   switch(e)
@@ -262,19 +296,53 @@ bool SystemState::cmdStnIPSetup()
     return true;
   }
 
+  const char* svcNameStr = "";
+
+  if (CMDSTN_LNWI == this->cmdStnType || CMDSTN_JMRI == this->cmdStnType)
+  {
+    svcNameStr = "withrottle";
+  } else if (CMDSTN_ESU == this->cmdStnType) { 
+    svcNameStr = "esu-mrtp";
+  }
+
+  // Do we have a protocol to look for?  Then go searching
+  if (strlen(svcNameStr))
+  {
+    Serial.printf("MDNS starting for service [%s]\n", svcNameStr);
+    int32_t numHosts = MDNS.queryService(svcNameStr, "tcp");
+
+    if (numHosts > 0)
+    {
+      // Just pick the first one for now.  Maybe there's some smarterish later?
+      Serial.printf("MDNS found %d hosts\n", numHosts);
+      Serial.print("Hostname: ");
+      Serial.println(MDNS.hostname(0));
+      Serial.print("IP address: ");
+      Serial.println(MDNS.IP(0));
+      Serial.print("Port: ");
+      Serial.println(MDNS.port(0));
+
+      // In the case of auto-discovery, set both the IP and port
+      this->cmdStnIP = MDNS.IP(0);
+      this->cmdStnPort = MDNS.port(0);
+      return true;
+    }
+  }
+
+  // As a last resort, try hard-coded rules about where certain devices (LNWIs, ESUs)
+  //  live based on just how they're built.
   if (CMDSTN_LNWI == this->cmdStnType
+    || (CMDSTN_JMRI == this->cmdStnType && isDccExSSID(this->ssid))
     || (CMDSTN_ESU == this->cmdStnType && 0 == strcmp(this->ssid, "ESUWIFI")))
   {
     // LNWIs are always on .1
     // Same for ESU CabControls if we're talking to its wifi network
+    // DCC-EXs currently don't seem to do mDNS at all, but again .1
     // Take our IP, make it a.b.c.1 and return it
     this->cmdStnIP = this->localIP;
     this->cmdStnIP[3] = 1;
     return true;
   }
-
-  // Anybody else?  Gotta go looking with a port scan of the local network
-  // FIXME, this should suck less
 
 
   return false;
@@ -310,7 +378,7 @@ bool SystemState::wifiScan()
     WiFi.getNetworkInfo(n, ssid, auth, rssi, bssid, channel);
     // Basic rule here is we should have the networks sorted by signal strength
     // First one that matches our command station type (if set) wins
-    Serial.printf("[%-32.32s] Ch: %2d RSSI: %d Auth: %s\n", ssid.c_str(), channel, rssi, wifiSecurityTypeToString((wifi_auth_mode_t)auth));
+    Serial.printf("[%-32.32s] Ch: %2d RSSI: %d Auth: %s\n", ssid.c_str(), channel, rssi, wifiSecurityTypeStringGet((wifi_auth_mode_t)auth));
   }
 
   for (int n=0; n<totalNetworks; n++)
@@ -358,8 +426,6 @@ bool SystemState::wifiScan()
       if (auth != WIFI_AUTH_OPEN)
         strncpy(this->password, "rpI-jmri", sizeof(this->password));
 
-      if (0 == (uint32_t)this->cmdStnIP)
-        this->cmdStnSuggestedIP.fromString("192.168.6.1");
       if (0 == this->cmdStnPort)
         this->cmdStnPort = 12090;
 
@@ -372,9 +438,7 @@ bool SystemState::wifiScan()
       strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
       if (auth != WIFI_AUTH_OPEN)
         snprintf(this->password, sizeof(this->password), "PASS_%s", ssid.c_str()+6);
-      // FIXME: Set the IP
-      if (0 == (uint32_t)this->cmdStnIP)
-        this->cmdStnSuggestedIP.fromString("192.168.4.1");
+
       if (0 == this->cmdStnPort)
         this->cmdStnPort = 2560;
       break;

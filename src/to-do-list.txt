@@ -1,5 +1,5 @@
 Things to do / fix yet:
  - ESU EVENTs
- - Auto command station IP discovery (mdns / port scan)
+ - Handle duplicate base addresses
  - Document object model and where crap goes
-  - Reinitialize throttle->cmd station when connection drops
+- Reinitialize throttle->cmd station when connection drops
