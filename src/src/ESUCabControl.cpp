@@ -135,8 +135,9 @@ bool ESUCabControl::update()
 
 void ESUCabControl::flushEvents()
 {
-
-
+  // FIXME:  Flush the rx buffer and handle any EVENTs by updating either throttles or system state
+  memset(this->rxBuffer, 0, ESUCC_RX_BUFFER_SZ);
+  this->rxBufferUsed = 0;
 }
 
 
@@ -194,9 +195,6 @@ int32_t ESUCabControl::query(const char* queryStr, char** replyBuffer, int32_t* 
   if (NULL != errCd)
     *errCd = -1; // Since ESU uses positive integers, we'll make -1 mean "no response"
 
-  // Flush rxbuffer
-  memset(this->rxBuffer, 0, ESUCC_RX_BUFFER_SZ);
-  this->rxBufferUsed = 0;
 
   // Send query
   char *queryWithLineEnding = NULL;
@@ -207,6 +205,11 @@ int32_t ESUCabControl::query(const char* queryStr, char** replyBuffer, int32_t* 
   // Now, our mission is to wait until either we get a response or timeout
   // A response will be in the form <REPLY queryStr>....<END num (errorstr)>
   // However, we may also see other weird stuff, like <EVENT ...> ... <END num (errorstr)>
+  // Eventually this->flushEvents() should handle this for us
+
+  // Flush rxbuffer
+  this->flushEvents();
+
   queryTimeout.setup(timeout_ms);
   queryTimeout.reset();
 

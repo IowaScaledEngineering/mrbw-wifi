@@ -43,3 +43,9 @@ When you get done, there should be a ports/espressif/_build/ise_mrbw_wifi_esp32s
 
 Copy those into the src/platformio/arduino/ise_mrbwwifi_esp32s2 directory (or .platformio/packages/framework-arduinoespressif32/variants/ise_mrbwwifi_esp32s2 to pick them up immediately) as bootloader-tinyuf2.bin (for bootloader/bootloader.bin) and tinyuf2.bin.
 
+# Building UF2 images
+
+Basically the tinyuf2 bootloader confines you to the OTA0 partition.  So it's expecting the base of the UF2 image to be 0x00000000 and it'll add the offset based on the partition table.  That does mean if we ever want to change partitioning, we probably are going to have to do it via esptool.  
+
+python3 ../../util/uf2conv.py -f 0xbfdd4eee -b 0 -c -o mrbwwifi-combined.uf2 firmware.bin
+

@@ -170,6 +170,7 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
           // Somebody else has this throttle, we need to confirm stealing it.
           char cmdBuffer[32];
           snprintf(cmdBuffer, sizeof(cmdBuffer), "%s\n", rxStr);
+          Serial.printf("JMRI TX: Steal [%s]\n", cmdBuffer);
           this->cmdStnConnection->write(cmdBuffer);
         }
         else if (cmdLen >= 3 && 'A' == cmd[2])
@@ -262,7 +263,7 @@ bool WiThrottle::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool 
 
   Serial.printf("JMRI locomotiveObjectGet(%c:%04d, 0x%02X)\n", isLongAddr?'L':'S', addr, mrbusAddr);
   uint8_t multiThrottleLetter = this->getMultiThrottleLetter(mrbusAddr, tState);
-  tState->locCmdStnRef = new WiThrottleLocRef(addr, isLongAddr, mrbusAddr, mrbusAddr);
+  tState->locCmdStnRef = new WiThrottleLocRef(addr, isLongAddr, mrbusAddr, multiThrottleLetter);
   
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c-*<;>r\n", multiThrottleLetter);
   this->rxtx(cmdBuffer);
