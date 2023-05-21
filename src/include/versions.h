@@ -1,7 +1,17 @@
 #pragma once
 
-#define MAJOR_VERSION  1
-#define MINOR_VERSION  0
-#define DELTA_VERSION  2
+#ifndef MAJOR_VERSION
+#define MAJOR_VERSION  0
+#endif
 
-#define GIT_VERSION    "a3fc9825f879c3adba68165235762b0e8f85957e"
+#ifndef MINOR_VERSION
+#define MINOR_VERSION  0
+#endif
+
+#ifndef DELTA_VERSION
+#define DELTA_VERSION  1
+#endif 
+
+#ifndef GIT_REV
+#define GIT_REV    "xxxxxx"
+#endif

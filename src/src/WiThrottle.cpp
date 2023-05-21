@@ -319,7 +319,7 @@ bool WiThrottle::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, bool i
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>V%d\n", locCmdStnRef->multiThrottleLetter, speed);
   this->rxtx(cmdBuffer);
   // Direction is 0=REV, 1=FWD on WiThrottle
-  snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>R%d\n", locCmdStnRef->multiThrottleLetter, isReverse?1:0);
+  snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>R%d\n", locCmdStnRef->multiThrottleLetter, isReverse?0:1);
   this->rxtx(cmdBuffer);
 
   tState->locSpeed = speed;

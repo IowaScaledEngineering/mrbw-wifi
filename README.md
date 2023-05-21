@@ -49,3 +49,6 @@ Basically the tinyuf2 bootloader confines you to the OTA0 partition.  So it's ex
 
 python3 ../../util/uf2conv.py -f 0xbfdd4eee -b 0 -c -o mrbwwifi-combined.uf2 firmware.bin
 
+# Building the Master Firmware Image
+
+python3 ../../util/join_bins.py mrbwwifi-master.bin 0x1000 ../../../src-platformio/arduino/ise_mrbwwifi_esp32s2/bootloader-tinyuf2.bin 0x8000 partitions.bin 0xE000 ../../../src-platformio/arduino/ise_mrbwwifi_esp32s2/boot_app0.bin 0x10000 firmware.bin 0x2d0000 ../../../src-platformio/arduino/ise_mrbwwifi_esp32s2/tinyuf2.bin

@@ -113,7 +113,7 @@ void drawSplashScreen(SystemState& state)
   display.putstr("Iowa Scaled", 0, 0);
   display.putstr("Engineering", 0, 1);
   display.putstr("MRBW-WIFI  ", 0, 2);
-  snprintf(buffer, sizeof(buffer), "%d.%d.%d %6.6s", MAJOR_VERSION, MINOR_VERSION, DELTA_VERSION, GIT_VERSION);
+  snprintf(buffer, sizeof(buffer), "%d.%d.%d %6.6s", MAJOR_VERSION, MINOR_VERSION, DELTA_VERSION, GIT_REV);
   display.putstr(buffer, 0, 3);
   
   snprintf(buffer, sizeof(buffer)-1, "%02X%02X", state.macAddr[4], state.macAddr[5]);
