@@ -29,7 +29,7 @@ def get_revisions(env, projenv):
 
   projenv.Append(CPPDEFINES=[("MAJOR_VERSION", "%d" % major)])
   projenv.Append(CPPDEFINES=[("MINOR_VERSION", "%d" % minor)])
-  projenv.Append(CPPDEFINES=[("DELTA_VERSION", "%d" % minor)])
+  projenv.Append(CPPDEFINES=[("DELTA_VERSION", "%d" % delta)])
 
   revstr = "%d_%d_%d-%6.6s" % (major, minor, delta, git_rev)
   if isGitDirty:
