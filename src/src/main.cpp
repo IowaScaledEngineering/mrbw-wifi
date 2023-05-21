@@ -123,6 +123,53 @@ void drawSplashScreen(SystemState& state)
   display.refresh();
 }
 
+bool sendMRBusVersionPacket(SystemState& systemState, MRBus& mrbus)
+{
+  // Send version packet
+  MRBusPacket versionPkt;
+  const char* const gitRev = GIT_REV;
+  versionPkt.src = systemState.mrbusSrcAddrGet();
+  versionPkt.dest = 0xFF;
+  versionPkt.len = 14;
+  versionPkt.data[0]  = 'v';
+  versionPkt.data[1]  = 0x80;
+  for(uint32_t i=0; i<6; i+=2)
+  {
+    char hexPair[3];
+    memcpy(hexPair, gitRev + i, 2);
+    hexPair[2] = 0;
+    versionPkt.data[i/2 + 2] = strtol(hexPair, NULL, 16);
+  }
+  versionPkt.data[5]  = 1;
+  versionPkt.data[6]  = 0;
+
+  if (!systemState.isWifiConnected)
+  {
+    memcpy(versionPkt.data + 7, "NO WIFI", 7);
+  } else if (!systemState.isCmdStnConnected) {
+    memcpy(versionPkt.data + 7, "NO CMST", 7);
+  } else if (systemState.isWifiConnected && systemState.isCmdStnConnected) {
+    switch(systemState.cmdStnType)
+    {
+        case CMDSTN_JMRI:
+          memcpy(versionPkt.data + 7, "WF-WTHR", 7);
+          break;
+        case CMDSTN_LNWI:
+          memcpy(versionPkt.data + 7, "WF-LNWI", 7);
+          break;
+        case CMDSTN_ESU:
+          memcpy(versionPkt.data + 7, "WF-ESU ", 7);
+          break;
+        default:
+          memcpy(versionPkt.data + 7, "WF-UNKN", 7);
+          break;
+    }
+  } else {
+    memcpy(versionPkt.data + 7, "WF-XXX", 7);
+  }
+  return mrbus.txPktQueue->push(versionPkt);
+}
+
 void drawStatusScreen(SystemState& state)
 {
   char lineBuf[24];
@@ -162,7 +209,7 @@ void drawStatusScreen(SystemState& state)
       break;
   }
 
-  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d B:%02d", state.isAutoNetwork?'A':'C', cmdStnStr, spinnerChars[spinnerNum], state.activeThrottles, state.baseAddress);
+  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d %c:%02d", state.isAutoNetwork?'A':'C', cmdStnStr, spinnerChars[spinnerNum], state.activeThrottles, state.isConflictingBasePresent()?'*':'B', state.baseAddress);
   display.putstr(lineBuf, 0, 0);
 
   if (0 == strlen(state.ssid))
@@ -175,9 +222,25 @@ void drawStatusScreen(SystemState& state)
 
   if (state.isWifiConnected)
   {
-    snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", state.localIP.toString().c_str());
+    char ipBuffer[64];
+    switch(state.ipDisplayLine)
+    {
+      case DISPLAY_IP_LOCAL:  // Two phases for 
+      case DISPLAY_IP_LOCAL2:
+        snprintf(lineBuf, sizeof(lineBuf), "L:%-19.19s", state.localIP.toString().c_str());
+        break;
+      case DISPLAY_IP_CMDSTN:
+      case DISPLAY_IP_CMDSTN2:
+        snprintf(ipBuffer, sizeof(ipBuffer), "%s:%d", state.cmdStnIP.toString().c_str(), state.cmdStnPort);
+        snprintf(lineBuf, sizeof(lineBuf), "C:%-19.19s", ipBuffer);
+        break;
+      default:
+        break;
+    }
+    state.ipDisplayLine = (IPLineDisplay)((state.ipDisplayLine + 1) % DISPLAY_IP_MAX_FIELDS);
+
   } else {
-    snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", "(Not Connected)");
+    snprintf(lineBuf, sizeof(lineBuf), "%-21.21s", "(No Network)");
   }
   display.putstr(lineBuf, 0, 2);
 
@@ -234,7 +297,7 @@ void loop()
     case STATE_MAIN_LOOP:
       if (tmrStatusScreenUpdate.test(true))
       {
-        uint32_t color = 0x0f0000;
+        uint32_t color = WS2812_RED;
         esp_task_wdt_reset();
 
         Serial.printf("%us memtask: %d heap free:%d Wifi=%c CmdStn=%c\n", (uint32_t)(esp_timer_get_time() / 1000000), uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
@@ -250,36 +313,21 @@ void loop()
         drawStatusScreen(systemState);
 
         if (systemState.isWifiConnected && systemState.isCmdStnConnected)
-          color = 0x000f00;
+        {
+          // Total abuse of an unsuspecting, innocent variable to get a 1 second phase clock
+          if (systemState.isConflictingBasePresent() && systemState.ipDisplayLine & 0x01)
+            color = WS2812_CYAN;
+          else
+            color = WS2812_GREEN;
+
+        }
         else if (systemState.isWifiConnected)
-          color = 0x0f0f00;
+          color = WS2812_YELLOW;
           
         ws2812Set(color);
 
-        // Send version packet
-        MRBusPacket versionPkt;
-
-        versionPkt.src = systemState.baseAddress + 0xD0;
-        versionPkt.dest = 0xFF;
-        versionPkt.len = 14;
-        versionPkt.data[0]  = 'v';
-        versionPkt.data[1]  = 0x80;
-        versionPkt.data[2]  = 0xAB;
-        versionPkt.data[3]  = 0xCD;
-        versionPkt.data[4]  = 0xEF;
-        versionPkt.data[5]  = 1;
-        versionPkt.data[6]  = 0;
-        versionPkt.data[7]  = 'N';
-        versionPkt.data[8]  = 'O';
-        versionPkt.data[9]  = ' ';
-        versionPkt.data[10] = 'W';
-        versionPkt.data[11] = 'I';
-        versionPkt.data[12] = 'F';
-        versionPkt.data[13] = 'I';
-
-        mrbus.txPktQueue->push(versionPkt);
+        sendMRBusVersionPacket(systemState, mrbus);
       }
-
       mrbus.processSerial();
 
       if (!systemState.isWifiConnected || !systemState.isCmdStnConnected)
@@ -324,12 +372,7 @@ void loop()
         systemState.localIP.fromString("0.0.0.0");
         systemState.isWifiConnected = false;
         MDNS.end();
-        if (systemState.isCmdStnConnected)
-        {
-            systemState.cmdStn->end();
-            delete systemState.cmdStn;
-        }
-        systemState.isCmdStnConnected = false;
+        systemState.cmdStnDisconnect();
       }
 
       if (!systemState.isWifiConnected || tmrStatusScreenUpdate.test(false))
@@ -340,15 +383,14 @@ void loop()
         // Just make sure we're really still connected
         if (!systemState.cmdStnConnection.connected())
         {
+          Serial.printf("Stopping socket connection\n\n");
+          systemState.cmdStnConnection.stop();
+
           if (NULL != systemState.cmdStn)
           {
             Serial.printf("Deleting disconnected command station\n\n");
-            systemState.cmdStn->end();
-            delete systemState.cmdStn;
+            systemState.cmdStnDisconnect();
           }
-          Serial.printf("Stopping socket connection\n\n");
-          systemState.cmdStnConnection.stop();
-          systemState.isCmdStnConnected = false;
         }
       }
 
@@ -406,6 +448,8 @@ void loop()
         if (pkt.src == systemState.mrbusSrcAddrGet())
         {
           // Ouch, conflicting base station detected
+          systemState.registerConflictingBase();
+          continue;
         }
 
         if (pkt.dest == systemState.mrbusSrcAddrGet() && pkt.data[0] == 'S' && pkt.len == 15

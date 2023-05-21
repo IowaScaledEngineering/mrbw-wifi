@@ -13,6 +13,11 @@ SystemState::SystemState()
   this->isAutoNetwork = true;
   this->isWifiConnected = false;
   this->isCmdStnConnected = false;
+  this->cmdStnTypeSetByConfig = false;
+  this->conflictingBaseTimer.setup(10000);  // Set base conflicts to last 10 seconds
+  this->conflictingBaseTimer.reset();
+  this->conflictingBase = false;
+  this->ipDisplayLine = DISPLAY_IP_LOCAL;
   memset(this->ssid, 0, sizeof(this->ssid));
   memset(this->password, 0, sizeof(this->password));
   memset(this->hostname, 0, sizeof(this->hostname));
@@ -49,6 +54,22 @@ bool SystemState::configWriteDefault(fs::FS &fs)
   f.close();
   return writeSuccess;
 }
+
+bool SystemState::cmdStnDisconnect()
+{
+  if (this->isCmdStnConnected)
+  {
+      this->cmdStn->end();
+      delete this->cmdStn;
+  }
+  // Handles the case where the cmd station might be still set from a previous instance
+  // If we didn't set it through the configuration file, then just clear it out
+  if (!this->cmdStnTypeSetByConfig)
+    this->cmdStnType = CMDSTN_NONE;
+  this->isCmdStnConnected = false;
+  return true;
+}
+
 
 bool configKeyValueSplit(char* key, uint32_t keySz, char* value, uint32_t valueSz, const char* configLine)
 {
@@ -118,14 +139,17 @@ bool SystemState::configRead(fs::FS &fs)
       if (0 == strcmp(valueStr, "lnwi"))
       {
         this->cmdStnType = CMDSTN_LNWI;
+        this->cmdStnTypeSetByConfig = true;
       }
       else if (0 == strcmp(valueStr, "withrottle"))
       {
         this->cmdStnType = CMDSTN_JMRI;
+        this->cmdStnTypeSetByConfig = true;
       }
       else if (0 == strcmp(valueStr, "esu"))
       {
         this->cmdStnType = CMDSTN_ESU;
+        this->cmdStnTypeSetByConfig = true;
       }
     }
     else if (0 == strcmp(keyStr, "ssid"))
@@ -335,7 +359,7 @@ bool SystemState::cmdStnIPSetup()
     || (CMDSTN_JMRI == this->cmdStnType && isDccExSSID(this->ssid))
     || (CMDSTN_ESU == this->cmdStnType && 0 == strcmp(this->ssid, "ESUWIFI")))
   {
-    // LNWIs are always on .1
+    // LNWIs are always (?) on .1
     // Same for ESU CabControls if we're talking to its wifi network
     // DCC-EXs currently don't seem to do mDNS at all, but again .1
     // Take our IP, make it a.b.c.1 and return it
@@ -347,6 +371,25 @@ bool SystemState::cmdStnIPSetup()
 
   return false;
 }
+
+bool SystemState::registerConflictingBase()
+{
+  this->conflictingBase = true;
+  this->conflictingBaseTimer.reset();
+  return true;
+}
+
+bool SystemState::isConflictingBasePresent()
+{
+  if (this->conflictingBase && this->conflictingBaseTimer.test(false))
+  {
+    // We've timed out
+    this->conflictingBase = false;
+  }
+
+  return this->conflictingBase;;
+}
+
 
 bool SystemState::wifiScan()
 {
