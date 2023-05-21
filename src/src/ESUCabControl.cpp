@@ -403,6 +403,129 @@ int32_t ESUCabControl::queryAddLocomotiveObject(uint16_t locAddr)
   return objID;
 }
 
+bool ESUCabControl::queryLocomotiveObjectSpeedDirGet(int32_t objID, uint8_t* speed, bool* isReverse)
+{
+  char queryStr[256];
+  char* responseStr = NULL;
+  int32_t responseLen = 0;
+  int32_t errCd = -1;
+  bool retval = false;
+
+  if (this->debug)
+    Serial.printf("ESU queryLocomotiveObjectSpeedDirGet: objID[%d]\n", objID);
+
+  snprintf(queryStr, sizeof(queryStr)-1, "get(%d, speed, dir)", objID);
+  responseLen = this->query(queryStr, &responseStr, &errCd);
+
+  if (responseLen > 0 && NULL != responseStr && 0 == errCd)
+  {
+    //Serial.printf("ESU queryLocomotiveObjectFunctionGet: Got response, errCd = %d\n", errCd);
+    char* bolPtr = responseStr;
+    char* eolPtr;
+    while (*bolPtr != 0 && NULL != (eolPtr = strchr(bolPtr, '\n')) && eolPtr < responseStr + responseLen)
+    {
+      if (eolPtr > bolPtr) // If there's something here other than a newline
+      {
+        uint32_t rObjID = 0;
+        uint32_t rSpeed= 0;
+        uint32_t rDir= 0;
+
+        *eolPtr = 0; // Null terminate in place, don't waste a copy
+        if (2 == sscanf(bolPtr, "%u speed[%u]", &rObjID, &rSpeed) && rObjID == objID)
+        {
+          *speed = rSpeed;
+        }
+        else if (2 == sscanf(bolPtr, "%u dir[%u]", &rObjID, &rDir) && rObjID == objID)
+        {
+          *isReverse = rDir?true:false;
+        }
+      }
+      bolPtr = eolPtr+1;
+    }
+  }
+
+  if (NULL != responseStr)
+    free(responseStr);
+
+  if (this->debug)
+  {
+    if (-1 == errCd)
+      Serial.printf("ESU queryLocomotiveObjectSpeedDirGet: TIMED OUT\n");
+    else if (0 != errCd)
+      Serial.printf("ESU queryLocomotiveObjectSpeedDirGet: QUERY ERROR  [%d]\n", errCd);
+    else
+      Serial.printf("ESU queryLocomotiveObjectSpeedDirGet: objID[%d] speed=%d, dir=%c\n", objID, *speed, *isReverse?'R':'F');
+  }
+  return retval;
+}
+
+
+
+bool ESUCabControl::queryLocomotiveObjectAllFunctionsGet(int32_t objID, bool *locFunctions)
+{
+  // This is the fast func getter to minimize the number of queries we need to make
+  char queryStr[256];
+  char* responseStr = NULL;
+  int32_t responseLen = 0;
+  int32_t errCd = -1;
+  bool retval = false;
+
+  if (this->debug)
+    Serial.printf("ESU queryLocomotiveObjectAllFunctionsGet: objID[%d]\n", objID);
+
+  for(int32_t queryPhase=0; queryPhase < 3; queryPhase++)
+  {
+    switch(queryPhase)
+    {
+      case 0:
+        snprintf(queryStr, sizeof(queryStr)-1, "get(%d, func[0], func[1], func[2], func[3], func[4], func[5], func[6], func[7], func[8], func[9])", objID);
+        break;
+      case 1:
+        snprintf(queryStr, sizeof(queryStr)-1, "get(%d, func[10], func[11], func[12], func[13], func[14], func[15], func[16], func[17], func[18], func[19])", objID);
+        break;
+
+      case 2:
+        snprintf(queryStr, sizeof(queryStr)-1, "get(%d, func[20], func[21], func[22], func[23], func[24], func[25], func[26], func[27], func[28])", objID);
+        break;
+
+      default:
+        // Eh, what?
+        break;
+
+    }
+    responseLen = this->query(queryStr, &responseStr, &errCd);
+
+    if (responseLen > 0 && NULL != responseStr && 0 == errCd)
+    {
+      //Serial.printf("ESU queryLocomotiveObjectFunctionGet: Got response, errCd = %d\n", errCd);
+      char* bolPtr = responseStr;
+      char* eolPtr;
+      while (*bolPtr != 0 && NULL != (eolPtr = strchr(bolPtr, '\n')) && eolPtr < responseStr + responseLen)
+      {
+        if (eolPtr > bolPtr) // If there's something here other than a newline
+        {
+          uint32_t rObjID = 0;
+          uint32_t rFuncNum= 0;
+          uint32_t rFuncVal= 0;
+
+          *eolPtr = 0; // Null terminate in place, don't waste a copy
+          if (3 == sscanf(bolPtr, "%u func[%u,%u]", &rObjID, &rFuncNum, &rFuncVal))
+          {
+            if (rObjID == objID && rFuncNum < MAX_FUNCTIONS)
+            {
+              locFunctions[rFuncNum] = rFuncVal?true:false;
+            }
+          }
+        }
+        bolPtr = eolPtr+1;
+      }
+    }
+    // Maybe retry?
+    if (NULL != responseStr)
+      free(responseStr);
+  }
+  return retval;
+}
 
 bool ESUCabControl::queryLocomotiveObjectFunctionGet(int32_t objID, uint8_t funcNum)
 {
@@ -703,13 +826,11 @@ bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bo
   this->queryAcquireLocomotiveObject(objID);
 
   // Get current speed/direction
-  // FIXME
+  this->queryLocomotiveObjectSpeedDirGet(objID, &tState->locSpeed, &tState->locRevDirection);
 
   // Get current function states
-  for(uint32_t funcNum=0; funcNum < MAX_FUNCTIONS; funcNum++)
-  {
-    tState->locFunctions[funcNum] = this->queryLocomotiveObjectFunctionGet(objID, funcNum);
-  }
+  this->queryLocomotiveObjectAllFunctionsGet(objID, tState->locFunctions);
+
   tState->locFunctionsGood = true;
 
   Serial.printf("ESU:locomotiveObjectGet success\n");
@@ -754,12 +875,8 @@ bool ESUCabControl::locomotiveFunctionsGet(ThrottleState* tState, bool functionS
   ESUCCLocRef* esuLocRef = (ESUCCLocRef*)tState->locCmdStnRef;
   if (NULL == esuLocRef)
     return false;
- 
-  for(uint32_t funcNum=0; funcNum < MAX_FUNCTIONS; funcNum++)
-  {
-    functionStates[funcNum] = this->queryLocomotiveObjectFunctionGet(esuLocRef->objID, funcNum);
-  }
 
+  this->queryLocomotiveObjectAllFunctionsGet(esuLocRef->objID, functionStates);
   return true;
 }
 

@@ -27,6 +27,8 @@ class ESUCabControl : public CommandStation
     ThrottleState* throttleStates[MAX_THROTTLES];
     int32_t queryLocomotiveObjectGet(uint16_t locAddr);
     int32_t queryAddLocomotiveObject(uint16_t locAddr);
+    bool queryLocomotiveObjectSpeedDirGet(int32_t objID, uint8_t *speed, bool *isReverse);
+    bool queryLocomotiveObjectAllFunctionsGet(int32_t objID, bool *locFunctions);
     bool queryLocomotiveObjectFunctionGet(int32_t objID, uint8_t funcNum);
     int32_t queryTrackPowerState();
     bool queryAcquireLocomotiveObject(int32_t objID);
