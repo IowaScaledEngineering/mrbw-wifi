@@ -3,6 +3,7 @@
 
 MRBus::MRBus()
 {
+  this->debug = DBGLVL_INFO;
   this->addr = 0x03;
   this->rxBuffer = new uint8_t[this->rxBufferSz];
   this->rxBufferUsed = 0;
@@ -26,10 +27,15 @@ bool MRBus::setAddress(uint8_t address)
   return true;
 }
 
-bool MRBus::begin()
+void MRBus::debugLevelSet(uint8_t debugLvl)
+{
+  this->debug = debugLvl;
+}
+
+bool MRBus::begin(uint8_t debugLvl)
 {
   //this->uart.begin(57600, SERIAL_8N1, 18, 17, false, 2000, 1020, 1024);
-  
+  this->debug = debugLvl;
   const uart_port_t uart_num = UART_NUM_1;
   uart_config_t uart_config = {
     .baud_rate = 115200,
@@ -86,7 +92,8 @@ TX: [7e 00 18 01 00 ff ff 00 ff d0 7d 33 1b cf 76 80 ab cd ef 01 00 4e 4f 20 57 
 */
   pkt.src = this->addr;
   pkt.calculateCRC(); // Update the CRC just to make sure we've got it
-  //Serial.printf("TX src=%02x dst=%02x len=%d crc=%04x\n", pkt->src,pkt->dest, pkt->len + 5, pkt->crc);
+  if (IS_DBGLVL_DEBUG)
+    Serial.printf("[MRBus]: TX src=0x%02x dst=0x%02x len=%d crc=0x%04x\n", pkt.src, pkt.dest, pkt.len + 5, pkt.crc);
 
   xBeeTxBuffer[0] = 0x7E;
   xBeeTxBuffer[1] = 0x00;
@@ -223,8 +230,11 @@ bool MRBus::processSerial()
               {
                 MRBusPacket pkt;
                 bool goodPacket = pkt.fromBuffer(xBeePkt + pktDataOffset, xBeePktLen - pktDataOffset);
-                //Serial.printf("Good packet, offset=%d, dest=%02x, pktQueueFull=%s\n", pktDataOffset, pkt.dest, this->rxPktQueue->isFull()?"true":"false");
-                //Serial.printf("MRBee: RX Pkt [%02x->%02x len=%d]\n", pkt.src, pkt.dest, pkt.len);
+                if (IS_DBGLVL_DEBUG)
+                {
+                  Serial.printf("[MRBus]: Good packet, offset=%d, dest=%02x, pktQueueFull=%s\n", pktDataOffset, pkt.dest, this->rxPktQueue->isFull()?"true":"false");
+                  Serial.printf("[MRBus]: MRBee RX Pkt [%02x->%02x len=%d]\n", pkt.src, pkt.dest, pkt.len);
+                }
                 if (goodPacket && (pkt.dest == this->addr || pkt.dest == 0xFF) && !this->rxPktQueue->isFull())
                   this->rxPktQueue->push(pkt);
               }
@@ -244,7 +254,7 @@ bool MRBus::processSerial()
   this->rxBufferUsed = endPtr - startOfUnprocessedData;
   if (this->rxBufferUsed) // If there's any bytes left over, move them up in the buffer
   {
-    Serial.printf("Saving off %d bytes\n", this->rxBufferUsed);
+    //Serial.printf("Saving off %d bytes\n", this->rxBufferUsed);
     memmove(this->rxBuffer, startOfUnprocessedData, this->rxBufferUsed);
   }
 

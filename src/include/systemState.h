@@ -6,6 +6,7 @@
 #include <FFat.h>
 #include "CommandStation.h"
 #include "periodicEvent.h"
+#include "commonFuncs.h"
 
 #define CONFIG_FILE_PATH "/config.txt"
 #define STRLN_SSID      32
@@ -77,4 +78,7 @@ class SystemState
     bool cmdStnDisconnect();
     bool registerConflictingBase();
 
+    uint8_t debugLvlCommandStation;
+    uint8_t debugLvlMRBus;
+    uint8_t debugLvlSystem;
 };

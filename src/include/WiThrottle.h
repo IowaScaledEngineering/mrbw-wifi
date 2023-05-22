@@ -29,7 +29,7 @@ class WiThrottle : public CommandStation
     bool locomotiveFunctionSetJMRI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
     bool locomotiveFunctionSetLNWI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
     ThrottleState* getThrottleStateForMultiThrottleLetter(uint8_t letter);
-
+    uint8_t debug;
 
   public:
     WiThrottle();
@@ -39,7 +39,7 @@ class WiThrottle : public CommandStation
     uint8_t getMultiThrottleLetter(uint8_t mrbusAddr, ThrottleState *tState);
     void releaseMultiThrottleLetter(uint8_t mrbusAddr);
     void processResponse(const uint8_t* rxData, uint32_t rxDataLen);
-    bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags);
+    bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl = DBGLVL_INFO);
     bool end();
     bool update();
     bool locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr);

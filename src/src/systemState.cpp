@@ -18,6 +18,11 @@ SystemState::SystemState()
   this->conflictingBaseTimer.reset();
   this->conflictingBase = false;
   this->ipDisplayLine = DISPLAY_IP_LOCAL;
+
+  this->debugLvlSystem = DBGLVL_INFO;
+  this->debugLvlMRBus = DBGLVL_INFO;
+  this->debugLvlCommandStation = DBGLVL_INFO;
+
   memset(this->ssid, 0, sizeof(this->ssid));
   memset(this->password, 0, sizeof(this->password));
   memset(this->hostname, 0, sizeof(this->hostname));
@@ -68,6 +73,21 @@ bool SystemState::cmdStnDisconnect()
     this->cmdStnType = CMDSTN_NONE;
   this->isCmdStnConnected = false;
   return true;
+}
+
+uint8_t debugWordToLevel(const char* debugStr)
+{
+  if (0 == strcmp(debugStr, "error"))
+    return DBGLVL_ERR;
+  else if (0 == strcmp(debugStr, "warn"))
+    return DBGLVL_WARN;
+  else if (0 == strcmp(debugStr, "info"))
+    return DBGLVL_INFO;
+  else if (0 == strcmp(debugStr, "debug"))
+    return DBGLVL_WARN;
+
+  // No valid string?  Turn it all on!
+  return DBGLVL_DEBUG;
 }
 
 
@@ -173,6 +193,22 @@ bool SystemState::configRead(fs::FS &fs)
     {
       strncpy(this->hostname, valueStr, sizeof(this->hostname));
     }
+    else if (0 == strcmp(keyStr, "logLevel"))
+    {
+      this->debugLvlMRBus = this->debugLvlCommandStation = this->debugLvlSystem = debugWordToLevel(valueStr);
+    }
+    else if (0 == strcmp(keyStr, "logLevelCommandStation"))
+    {
+      this->debugLvlCommandStation = debugWordToLevel(valueStr);
+    }
+    else if (0 == strcmp(keyStr, "logLevelMRBus"))
+    {
+      this->debugLvlMRBus = debugWordToLevel(valueStr);
+    }
+    else if (0 == strcmp(keyStr, "logLevelSystem"))
+    {
+      this->debugLvlSystem = debugWordToLevel(valueStr);
+    }
   }
 
   f.close();
@@ -191,6 +227,8 @@ bool SystemState::configRead(fs::FS &fs)
  
   return true;
 }
+
+
 
 const char* SystemState::resetReasonStringGet()
 {

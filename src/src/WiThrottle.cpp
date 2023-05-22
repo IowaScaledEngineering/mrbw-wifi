@@ -3,6 +3,7 @@
 
 WiThrottle::WiThrottle()
 {
+  this->debug = DBGLVL_INFO;
   this->lnwiMode = false;
   this->cmdStnConnection = NULL;
   this->rxBuffer = new uint8_t[WITHROTTLE_RX_BUFFER_SZ];
@@ -38,7 +39,8 @@ void WiThrottle::rxtx(const char* cmdStr)
   {
     this->cmdStnConnection->write(cmdStr);
     this->keepaliveTimer.reset();
-    Serial.printf("JMRI TX: [%s]\n", cmdStr);
+    if (IS_DBGLVL_DEBUG)
+      Serial.printf("[WTHR]: TX [%s]\n", cmdStr);
   }
 
   int32_t available = 0;
@@ -52,7 +54,8 @@ void WiThrottle::rxtx(const char* cmdStr)
   if (0 == bytesRead)
     return;
 
-  //Serial.printf("JMRI RX: [%s]\n", this->rxBuffer);
+  if (IS_DBGLVL_DEBUG)
+    Serial.printf("[WTHR]: RX [%s]\n", this->rxBuffer);
 
   uint8_t *ptr = this->rxBuffer;
   uint8_t *endPtr = NULL; 
@@ -97,7 +100,8 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
   buffer[rxDataLen] = 0;
   rxStr = trim(rxStr);
 
-  Serial.printf("JMRI RX: processResponse [%s]\n", rxStr);
+  if (IS_DBGLVL_DEBUG)
+    Serial.printf("[WTHR]: RX processResponse [%s]\n", rxStr);
 
   if (0 == strncmp(rxStr, "PPA", 3))
   {
@@ -112,7 +116,8 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
   else if (0 == strncmp(rxStr, "VN", 2))
   {
     // Protocol version
-    Serial.printf("JMRI RX: Version [%s]\n", rxStr+2);
+    if (IS_DBGLVL_DEBUG)
+      Serial.printf("[WTHR]: RX Version [%s]\n", rxStr+2);
   }
   else if (0 == strncmp(rxStr, "RL", 2))
   {
@@ -138,18 +143,21 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
   else if (0 == strncmp(rxStr, "N", 1))
   {
     // Host controller name
-    Serial.printf("JMRI RX: Host Name [%s]\n", rxStr+1);
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[WTHR]: RX Host Name [%s]\n", rxStr+1);
   }
   else if (0 == strncmp(rxStr, "U", 1))
   {
     // Host controller ID
-    Serial.printf("JMRI RX: Host ID [%s]\n", rxStr+1);
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[WTHR]: RX Host ID [%s]\n", rxStr+1);
   }
   else if (0 == strncmp(rxStr, "M", 1))
   {
     // Multithrottle update 
-    // FIXME: Lots to do here
-    Serial.printf("JMRI RX: Multithrottle Update [%s]\n", rxStr);
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[WTHR]: RX Multithrottle Update [%s]\n", rxStr);
+
     char* cmd = strdup(rxStr);
     char* ptr = cmd;
 
@@ -162,7 +170,8 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
         const char* data = ptr + 2;
         uint8_t cmdLen = strlen(cmd);
         uint8_t dataLen = strlen(data);
-        Serial.printf("[%s] -> [%s]\n", cmd, data);
+        if (IS_DBGLVL_DEBUG)
+          Serial.printf("[%s] -> [%s]\n", cmd, data);
 
 
         if (cmdLen >= 3 && 'S' == cmd[2])
@@ -170,7 +179,8 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
           // Somebody else has this throttle, we need to confirm stealing it.
           char cmdBuffer[32];
           snprintf(cmdBuffer, sizeof(cmdBuffer), "%s\n", rxStr);
-          Serial.printf("JMRI TX: Steal [%s]\n", cmdBuffer);
+          if (IS_DBGLVL_INFO)
+            Serial.printf("[WTHR]: TX Steal [%s]\n", cmdBuffer);
           this->cmdStnConnection->write(cmdBuffer);
         }
         else if (cmdLen >= 3 && 'A' == cmd[2])
@@ -184,18 +194,21 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
 
             if (funcNum >= 28)
               tState->locFunctionsGood = true;
-
-            Serial.printf("JMRI RX: Throttle %c func %02d = %d\n", cmd[1],funcNum, tState->locFunctions[funcNum]?1:0);
+            if (IS_DBGLVL_DEBUG)
+              Serial.printf("[WTHR]: RX Throttle %c func %02d = %d\n", cmd[1],funcNum, tState->locFunctions[funcNum]?1:0);
 
           } else if (dataLen >= 2 && 'V' == data[0]) {
             uint8_t speed = atoi(data+1);
             tState->locSpeed = speed;
-            Serial.printf("JMRI RX: Throttle %c speed %d\n", cmd[1], tState->locSpeed);
+            if (IS_DBGLVL_DEBUG)
+              Serial.printf("[WTHR]: RX Throttle %c speed %d\n", cmd[1], tState->locSpeed);
           } else if (dataLen >= 2  && 'R' == data[0]) {
             tState->locRevDirection = ('0' == data[1])?false:true;
-            Serial.printf("JMRI RX: Throttle %c direction %c\n", cmd[1], tState->locRevDirection?'R':'F');
+            if (IS_DBGLVL_DEBUG)
+              Serial.printf("[WTHR]: RX Throttle %c direction %c\n", cmd[1], tState->locRevDirection?'R':'F');
           } else {
-            Serial.printf("JMRI RX: Unhandled multithrottle Update [%s]\n", rxStr);
+            if (IS_DBGLVL_WARN)
+              Serial.printf("[WTHR]: RX Unhandled multithrottle Update [%s]\n", rxStr);
           }
 
         }
@@ -204,26 +217,32 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
 
     if (NULL != cmd)
       free(cmd);
-
-
-    // Make sure there's a <;>, otherwise this makes no sense
   }
   else
   {
-    Serial.printf("JMRI RX:  Unhandled host->client [%s]\n", rxStr);
+    if (IS_DBGLVL_WARN)
+      Serial.printf("[WTHR]: RX Unhandled host->client [%s]\n", rxStr);
   }
 
   free(buffer);
 }
 
-bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags)
+bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl)
 {
+  this->debug = debugLvl;
   this->cmdStnConnection = &cmdStnConnection;
   if (quirkFlags & WITHROTTLE_QUIRK_LNWI)
     this->lnwiMode = true;
 
+  memset(this->rxBuffer, 0, WITHROTTLE_RX_BUFFER_SZ);
+  this->rxBufferUsed = 0;
+  this->keepaliveTimer.setup(10000);
+  for(uint32_t i=0; i<MAX_THROTTLES; i++)
+    this->throttleStates[i] = NULL;
+
   this->keepaliveTimer.reset();
-  Serial.printf("JMRI begin()\n");
+  if (IS_DBGLVL_INFO)
+    Serial.printf("[WTHR]: JMRI begin()\n");
 
   this->rxtx("NProtoThrottle Bridge\n");
   this->rxtx("HUProtoThrottle Bridge\n");
@@ -233,14 +252,23 @@ bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags)
 
 bool WiThrottle::end()
 {
+
   this->cmdStnConnection = NULL;
   // Nuke the command station connection pointer
   for(uint32_t i=0; i<MAX_THROTTLES; i++)
   {
-    if (NULL != this->throttleStates[i])
-      free(this->throttleStates[i]);
+    if (NULL != this->throttleStates[i]->locCmdStnRef)
+    {
+      free(this->throttleStates[i]->locCmdStnRef);
+      this->throttleStates[i]->locCmdStnRef = NULL;
+    }
     this->throttleStates[i] = NULL;
   }
+
+  if (NULL != this->rxBuffer)
+    free(this->rxBuffer);
+  this->rxBuffer = NULL;
+  this->rxBufferUsed = 0;
   return true;
 }
 
@@ -261,10 +289,12 @@ bool WiThrottle::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool 
 {
   char cmdBuffer[64];
 
-  Serial.printf("JMRI locomotiveObjectGet(%c:%04d, 0x%02X)\n", isLongAddr?'L':'S', addr, mrbusAddr);
   uint8_t multiThrottleLetter = this->getMultiThrottleLetter(mrbusAddr, tState);
   tState->locCmdStnRef = new WiThrottleLocRef(addr, isLongAddr, mrbusAddr, multiThrottleLetter);
-  
+
+  if (IS_DBGLVL_INFO)
+    Serial.printf("[WTHR]: locomotiveObjectGet(%c%04d) mrbus=[0x%02X] letter=%c\n", isLongAddr?'L':'S', addr, mrbusAddr, multiThrottleLetter);
+
   snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c-*<;>r\n", multiThrottleLetter);
   this->rxtx(cmdBuffer);
 
@@ -294,8 +324,13 @@ bool WiThrottle::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool 
 
 bool WiThrottle::locomotiveEmergencyStop(ThrottleState* tState)
 {
+  WiThrottleLocRef* locCmdStnRef = (WiThrottleLocRef*)(tState->locCmdStnRef);
   char cmdBuffer[32];
-  snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>X\n", ((WiThrottleLocRef*)(tState->locCmdStnRef))->multiThrottleLetter);
+
+  if (IS_DBGLVL_INFO)
+    Serial.printf("[WTHR]: locomotiveEmergencyStop(%c%d/%c)\n", locCmdStnRef->isLongAddr?'L':'S', locCmdStnRef->locAddr, locCmdStnRef->multiThrottleLetter);
+
+  snprintf(cmdBuffer, sizeof(cmdBuffer), "M%cA*<;>X\n", locCmdStnRef->multiThrottleLetter);
   this->rxtx(cmdBuffer);
 
   tState->locEStop = true;
@@ -310,7 +345,8 @@ bool WiThrottle::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, bool i
 
   // Sets the speed and direction of a locomotive via a handle that has been previously acquired with locomotiveObjectGet().  
   // Speed is 0-127, Direction is 0=forward, 1=reverse.
-  Serial.printf("JMRI locomotiveSpeedSet(%d): set speed %d %s\n", locCmdStnRef->locAddr, speed, isReverse?"REV":"FWD");
+  if (IS_DBGLVL_INFO)
+    Serial.printf("[WTHR]: locomotiveSpeedSet(%c%d/%c): speed[%c:%d]\n", locCmdStnRef->isLongAddr?'L':'S', locCmdStnRef->locAddr, locCmdStnRef->multiThrottleLetter, isReverse?'R':'F', speed);
 
   // Bound speed to allowed values
   speed = MIN(speed, 127);
@@ -390,7 +426,9 @@ ThrottleState *WiThrottle::getThrottleStateForMultiThrottleLetter(uint8_t letter
 
 bool WiThrottle::locomotiveFunctionSet(ThrottleState* tState, uint8_t funcNum, bool funcActive)
 {
-  Serial.printf("WiThrottle::locomotiveFunctionSet [%c] F%0d = %d\n", ((WiThrottleLocRef*)(tState->locCmdStnRef))->multiThrottleLetter, funcNum, funcActive);
+  WiThrottleLocRef* locCmdStnRef = (WiThrottleLocRef*)(tState->locCmdStnRef);
+  if (IS_DBGLVL_INFO)
+    Serial.printf("[WTHR]: locomotiveFunctionSet(%c%d/%c) F%0d = %d\n", locCmdStnRef->isLongAddr?'L':'S', locCmdStnRef->locAddr, locCmdStnRef->multiThrottleLetter, funcNum, funcActive);
   if (this->lnwiMode)
     return this->locomotiveFunctionSetLNWI(tState, funcNum, funcActive);
   else
@@ -401,8 +439,12 @@ bool WiThrottle::locomotiveDisconnect(ThrottleState* tState)
 {
   char cmdBuffer[32];
   WiThrottleLocRef* locCmdStnRef = (WiThrottleLocRef*)tState->locCmdStnRef;
+
   if (NULL != locCmdStnRef)
   {
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[WTHR]: locomotiveDisconnect(%c%d/%c)\n", locCmdStnRef->isLongAddr?'L':'S', locCmdStnRef->locAddr, locCmdStnRef->multiThrottleLetter);
+
     snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c-*<;>r\n", locCmdStnRef->multiThrottleLetter);
     this->rxtx(cmdBuffer);
     snprintf(cmdBuffer, sizeof(cmdBuffer), "M%c-*<;>d\n", locCmdStnRef->multiThrottleLetter);
@@ -416,5 +458,6 @@ bool WiThrottle::locomotiveDisconnect(ThrottleState* tState)
     tState->locSpeed = 0;
     tState->locRevDirection = false;
   }
+ 
   return true;
 }

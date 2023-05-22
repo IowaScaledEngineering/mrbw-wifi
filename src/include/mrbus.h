@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <Arduino.h>
 #include "ringbuffer.h"
+#include "commonFuncs.h"
 
 #define MRBUS_PKT_DEST  0
 #define MRBUS_PKT_SRC   1
@@ -39,6 +40,7 @@ class MRBus
 {
     private:
       uint8_t addr;
+      uint8_t debug;
       uint8_t* rxBuffer;
       const uint32_t rxBufferSz = 256;
       uint32_t rxBufferUsed;
@@ -46,10 +48,11 @@ class MRBus
     public:
         MRBus();
         ~MRBus();
-        bool begin();
+        bool begin(uint8_t debugLvl = DBGLVL_INFO);
         void transmitPackets();
         bool processSerial();
         bool setAddress(uint8_t address);
-        RingBuffer<MRBusPacket>* rxPktQueue;
+        void debugLevelSet(uint8_t debugLvl);
+        RingBuffer<MRBusPacket> *rxPktQueue;
         RingBuffer<MRBusPacket>* txPktQueue;
 };

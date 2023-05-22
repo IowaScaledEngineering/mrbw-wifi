@@ -12,12 +12,12 @@ class MRBusThrottle
     private:
       ThrottleState tState;
       uint8_t throttleAddr;
-
+      uint8_t debug;
     public:
         MRBusThrottle();
         ~MRBusThrottle();
         CmdStnLocRef *getCmdStnRef();
-        void initialize(uint8_t mrbusAddr);
+        void initialize(uint8_t mrbusAddr, uint8_t debugLvl = DBGLVL_INFO);
         uint8_t mrbusAddrGet();
         bool isActive();
         bool isExpired(uint32_t idleMilliseconds);

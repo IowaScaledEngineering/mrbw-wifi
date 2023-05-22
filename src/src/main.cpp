@@ -59,12 +59,6 @@ void setup()
   esp_task_wdt_reset();
   ws2812Set(0x0f0000);
 
-  // Initialize the throttle array
-  for(uint32_t thrNum=0; thrNum<MAX_THROTTLES; thrNum++)
-  {
-    throttles[thrNum].initialize(MRBUS_THROTTLE_BASE_ADDR + thrNum);
-  }
-
   // Try to mount the FFat partition, format if it can't find it
   systemState.isFSConnected = FFat.begin(true);
 
@@ -86,6 +80,14 @@ void setup()
   // Read configuration from FAT partition before 
   //  we open it up to allow the host computer to write to it
   systemState.configRead(FFat);
+
+  mrbus.debugLevelSet(systemState.debugLvlMRBus);
+
+  // Initialize the throttle array - needs to be after reading configuration
+  for(uint32_t thrNum=0; thrNum<MAX_THROTTLES; thrNum++)
+  {
+    throttles[thrNum].initialize(MRBUS_THROTTLE_BASE_ADDR + thrNum, systemState.debugLvlMRBus);
+  }
 
   // Start mass storage class driver.  From here on out, we should be read-only on
   // the mrbw-wifi side
@@ -281,18 +283,19 @@ void loop()
         mainLoopState = STATE_MAIN_LOOP;
 
         // Print a bunch of diagnostic header info to the serial console
-        Serial.printf("Iowa Scaled Engineering\n");
-        Serial.printf("MRBW-WIFI\n");
-        Serial.printf("IDF Ver:  [%s]\n", esp_get_idf_version());
-        Serial.printf("MAC Addr: [%02X:%02X:%02X:%02X:%02X:%02X]\n", 
+        Serial.printf("[SYS]: Iowa Scaled Engineering\n");
+        Serial.printf("[SYS]: MRBW-WIFI\n");
+        Serial.printf("[SYS]: IDF Ver:  [%s]\n", esp_get_idf_version());
+        Serial.printf("[SYS]: MAC Addr: [%02X:%02X:%02X:%02X:%02X:%02X]\n", 
           systemState.macAddr[0], systemState.macAddr[1], systemState.macAddr[2],
           systemState.macAddr[3], systemState.macAddr[4], systemState.macAddr[5]);
 
         esp_chip_info_t chip_info;
         esp_chip_info(&chip_info);
-        Serial.printf("ESP32S2 rev %d \n", chip_info.revision);
-        Serial.printf("Reset Reason: [%s]\n", systemState.resetReasonStringGet());
+        Serial.printf("[SYS]: ESP32S2 rev %d \n", chip_info.revision);
+        Serial.printf("[SYS]: Reset Reason: [%s]\n", systemState.resetReasonStringGet());
       }
+      break;
 
     case STATE_MAIN_LOOP:
       if (tmrStatusScreenUpdate.test(true))
@@ -300,7 +303,8 @@ void loop()
         uint32_t color = WS2812_RED;
         esp_task_wdt_reset();
 
-        Serial.printf("%us memtask: %d heap free:%d Wifi=%c CmdStn=%c\n", (uint32_t)(esp_timer_get_time() / 1000000), uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
+        Serial.printf("[SYS]: TICK %05us stack: %d heap:%d Wifi=%c CmdStn=%c\n", (uint32_t)(esp_timer_get_time() / 1000000), uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
+
         systemState.baseAddress = switches.baseAddressGet();
         mrbus.setAddress(systemState.baseAddress + 0xD0); // MRBus address for the base is switches + 0xD0 offset
         systemState.rssi = WiFi.RSSI();
@@ -345,7 +349,7 @@ void loop()
         if (networkFound) // Can either be because search found one or not autconfig
         {
           // Try to connect to the network we found
-          Serial.printf("Starting connection to [%s] [%s]\n", systemState.ssid, systemState.password);
+          Serial.printf("[SYS]: Starting connection to [%s] [%s]\n", systemState.ssid, systemState.password);
           WiFi.begin(systemState.ssid, systemState.password);
 
           // FIXME - put timeout here
@@ -353,7 +357,7 @@ void loop()
           {
             delay(100);
           }
-          Serial.printf("Connected to wifi network\n");
+          Serial.printf("[SYS]: Connected to wifi network [%s]\n", systemState.ssid);
           WiFi.setAutoReconnect(true);
         }
 
@@ -383,12 +387,12 @@ void loop()
         // Just make sure we're really still connected
         if (!systemState.cmdStnConnection.connected())
         {
-          Serial.printf("Stopping socket connection\n\n");
+          Serial.printf("[SYS]: Stopping command station socket connection\n\n");
           systemState.cmdStnConnection.stop();
 
           if (NULL != systemState.cmdStn)
           {
-            Serial.printf("Deleting disconnected command station\n\n");
+            Serial.printf("[SYS]: Deleting disconnected command station\n\n");
             systemState.cmdStnDisconnect();
           }
         }
@@ -400,9 +404,9 @@ void loop()
         if (!systemState.cmdStnIPSetup())  // Do all the logic about merging configuration with auto-discovery
           return;  // No IP found for a command station, on with life - return from loop() and start over
         
-        Serial.printf("Trying to connect %s:%d\n", systemState.cmdStnIP.toString().c_str(), systemState.cmdStnPort);
+        Serial.printf("[SYS]: Trying to connect %s:%d\n", systemState.cmdStnIP.toString().c_str(), systemState.cmdStnPort);
         bool connectSuccessful = systemState.cmdStnConnection.connect(systemState.cmdStnIP, systemState.cmdStnPort, 1000);
-        Serial.printf("Connect successful = %c\n", connectSuccessful?'Y':'N');
+        Serial.printf("[SYS]: Connect successful = %c\n", connectSuccessful?'Y':'N');
 
         if (connectSuccessful)
         {
@@ -414,15 +418,15 @@ void loop()
           {
             case CMDSTN_JMRI:
               systemState.cmdStn = new WiThrottle;
-              systemState.cmdStn->begin(systemState.cmdStnConnection, 0);
+              systemState.cmdStn->begin(systemState.cmdStnConnection, 0, systemState.debugLvlCommandStation);
               break;
             case CMDSTN_LNWI:
               systemState.cmdStn = new WiThrottle;
-              systemState.cmdStn->begin(systemState.cmdStnConnection, WITHROTTLE_QUIRK_LNWI);
+              systemState.cmdStn->begin(systemState.cmdStnConnection, WITHROTTLE_QUIRK_LNWI, systemState.debugLvlCommandStation);
               break;
             case CMDSTN_ESU:
               systemState.cmdStn = new ESUCabControl;
-              systemState.cmdStn->begin(systemState.cmdStnConnection, 0);
+              systemState.cmdStn->begin(systemState.cmdStnConnection, 0, systemState.debugLvlCommandStation);
               break;
             default: // Do nothing, don't know what it is
               break;

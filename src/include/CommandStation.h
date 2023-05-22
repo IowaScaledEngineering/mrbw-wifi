@@ -17,7 +17,7 @@ class CmdStnLocRef
 class CommandStation
 {
   public:
-    virtual bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags);
+    virtual bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl);
     virtual bool end();
     virtual bool update();
     virtual bool locomotiveObjectGet(ThrottleState* locCmdStnRef, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr);

@@ -12,8 +12,9 @@ MRBusThrottle::~MRBusThrottle()
 {
 }
 
-void MRBusThrottle::initialize(uint8_t mrbusAddr)
+void MRBusThrottle::initialize(uint8_t mrbusAddr, uint8_t debugLvl)
 {
+  this->debug = debugLvl;
   this->tState.init();
   this->throttleAddr = mrbusAddr;
 }
@@ -39,7 +40,8 @@ bool MRBusThrottle::isExpired(uint32_t idleSeconds)
 // Release just releases the current engine number
 bool MRBusThrottle::release(CommandStation* cmdStn)
 {
-  Serial.printf("Locomotive %c:%d released\n", this->tState.isLongAddr?'L':'S', this->tState.locAddr);
+  if (IS_DBGLVL_INFO)
+    Serial.printf("[MRBusThrottle:%02x]: Locomotive %c:%d released\n", this->throttleAddr, this->tState.isLongAddr?'L':'S', this->tState.locAddr);
   return true;
 }
 
@@ -50,7 +52,7 @@ bool MRBusThrottle::disconnect(CommandStation* cmdStn)
 {
   cmdStn->locomotiveDisconnect(&this->tState);
   this->release(cmdStn);
-  this->initialize(this->throttleAddr);
+  this->initialize(this->throttleAddr, this->debug);
   return true;
 }
 
@@ -112,7 +114,8 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
     }
 
     this->tState.active = true;
-    Serial.printf("Locomotive %c:%d acquired\n", this->tState.isLongAddr?'L':'S', this->tState.locAddr);
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[MRBusThrottle:%02x]: Locomotive %c:%d acquired\n", this->throttleAddr, this->tState.isLongAddr?'L':'S', this->tState.locAddr);
   }
 
   // Only send estop if we just moved into that state
@@ -138,5 +141,6 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
     }
   }
   this->tState.lastUpdate = esp_timer_get_time();
-  //Serial.printf("Locomotive %d updated at %llu\n", this->tState.locAddr, this->tState.lastUpdate);
+  if (IS_DBGLVL_DEBUG)
+    Serial.printf("[MRBusThrottle:%02x]: Locomotive %d updated at %llu\n", this->throttleAddr, this->tState.locAddr, this->tState.lastUpdate);
 }

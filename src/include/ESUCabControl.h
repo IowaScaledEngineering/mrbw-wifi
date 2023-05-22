@@ -17,7 +17,7 @@ class ESUCCLocRef : public CmdStnLocRef
 class ESUCabControl : public CommandStation
 {
   private:
-    bool debug;
+    uint8_t debug;
     WiFiClient *cmdStnConnection;
     uint8_t* rxBuffer;
     uint32_t rxBufferUsed;
@@ -37,17 +37,18 @@ class ESUCabControl : public CommandStation
     bool queryLocomotiveObjectEmergencyStop(int32_t objID);
     bool queryReleaseLocomotiveObject(int32_t objID);
     int32_t query(const char *queryStr, char **replyBuffer, int32_t *errCode, int32_t timeout_ms=1000);
+    ThrottleState *findThrottleByObject(int32_t rObjID);
 
   public:
     ESUCabControl();
     ~ESUCabControl();
-    bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags);
+    bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl = DBGLVL_INFO);
     bool end();
     bool update();
-    void flushEvents();
+
+    void handleEvents();
     void rxtx();
     void rxtx(const char *cmdStr);
-
     bool locomotiveObjectGet(ThrottleState *locCmdStnRef, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr);
     bool locomotiveEmergencyStop(ThrottleState* locCmdStnRef);
     bool locomotiveSpeedSet(ThrottleState* locCmdStnRef, uint8_t speed, bool isReverse);
