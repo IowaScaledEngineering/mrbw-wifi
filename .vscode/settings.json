@@ -22,6 +22,7 @@
       "tuple": "cpp",
       "new": "cpp",
       "random": "cpp",
-      "initializer_list": "cpp"
+      "initializer_list": "cpp",
+      "memory": "cpp"
     }
 }
