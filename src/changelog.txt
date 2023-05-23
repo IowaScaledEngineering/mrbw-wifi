@@ -1,5 +1,30 @@
 Changelog
 -----------------------------------------------
+1.0.4 (c5984b) - 22 May 2023
+
+FEATURE: Added EVENT handling to the ESU code, such that if another 
+ throttle updates the same engine selected on the PT, we'll respond appropriately.
+
+FEATURE: Added JMRI fast clock support.  Setting "fastClockSource = cmdstn" 
+ in the configuration file will tell the mrbw-wifi to use fast time from any sort 
+ of withrottle server.  Yes, that includes the LNWI.  However, the LNWI doesn't 
+ disappoint as the glitchy little gremlin that it is, and its support for sending 
+ fast time seems to be "special" at best and broken at worst.  However, JMRI 
+ works flawlessly as best I can tell.
+
+FEATURE:  Added duplicate PT receiver detection.  If you have two PT receivers 
+ on the same base address, you'll now get an asterisk instead of a B in front 
+ of the base addr on the screen, and the LED will blink green -> cyan -> green 
+ on a 1s interval.
+
+FEATURE: Added display of both the receiver's IP address and the command station /
+ server that it's trying to connect to.  An L: on the front end means it's the 
+ local address, a C: means it's the command station IP/port.  These cycle on 
+ a 2 second interval so you can see both.
+
+CLEANUP: Cleaned up serial console logging and added the ability to set the log 
+ level in the config.txt file so that you can turn up the logging if we run into 
+ a problem we can't duplicate.  
 
 
 
