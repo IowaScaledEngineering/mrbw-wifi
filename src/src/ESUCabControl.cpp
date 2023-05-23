@@ -70,6 +70,17 @@ ESUCabControl::~ESUCabControl()
   this->end();
 }
 
+
+bool ESUCabControl::fastClockConnect(Clock* fastClock)
+{
+  return false;  // ESU does not have a fast clock
+}
+
+void ESUCabControl::fastClockDisconnect()
+{
+  return;
+}
+
 ESUCCLocRef::ESUCCLocRef(uint16_t locAddr, bool isLongAddr, uint8_t mrbusAddr, int32_t objID)
 {
   this->locAddr = locAddr;

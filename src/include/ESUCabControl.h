@@ -42,6 +42,8 @@ class ESUCabControl : public CommandStation
   public:
     ESUCabControl();
     ~ESUCabControl();
+    bool fastClockConnect(Clock *fastClock);
+    void fastClockDisconnect();
     bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl = DBGLVL_INFO);
     bool end();
     bool update();

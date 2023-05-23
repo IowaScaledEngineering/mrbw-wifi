@@ -19,6 +19,7 @@ SET_LOOP_TASK_STACK_SIZE(62 * 1024);
 #include "MRBusThrottle.h"
 #include "WiThrottle.h"
 #include "ESUCabControl.h"
+#include "Clock.h"
 #include "esp32s2/rom/rtc.h"
 #include <ESPmDNS.h>
 
@@ -124,6 +125,44 @@ void drawSplashScreen(SystemState& state)
   display.drawISELogo();  
   display.refresh();
 }
+
+#define TIME_FLAGS_DISP_FAST       0x01
+#define TIME_FLAGS_DISP_FAST_HOLD  0x02
+#define TIME_FLAGS_DISP_REAL_AMPM  0x04
+#define TIME_FLAGS_DISP_FAST_AMPM  0x08
+
+bool sendMRBusTimePacket(SystemState& systemState, MRBus& mrbus)
+{
+  MRBusPacket timePkt;
+  // If the fast clock isn't enabled, don't send a time packet
+  if (!systemState.fastClock.isEnabled())
+    return false;
+
+  timePkt.src = systemState.mrbusSrcAddrGet();
+  timePkt.dest = 0xFF;
+  timePkt.len = 14;
+  timePkt.data[0]  = 'T';
+  timePkt.data[1]  = 0; // Real hours
+  timePkt.data[2]  = 0; // Real minutes
+  timePkt.data[3]  = 0; // Real seconds
+  timePkt.data[4]  = 0; // Flags
+
+  if (systemState.fastClock.isStopped())
+  {
+    timePkt.data[4] |= TIME_FLAGS_DISP_FAST_HOLD;
+  }
+
+  timePkt.data[4] |= TIME_FLAGS_DISP_FAST;
+
+  systemState.fastClock.getTime(&timePkt.data[5], &timePkt.data[6], &timePkt.data[7]);
+
+  uint16_t mrbusFTRatio = systemState.fastClock.getRatio() / 100;
+  timePkt.data[8] = 0xFF & (mrbusFTRatio>>8);
+  timePkt.data[9] = mrbusFTRatio & 0xFF;
+  return mrbus.txPktQueue->push(timePkt);
+  return true;
+}
+
 
 bool sendMRBusVersionPacket(SystemState& systemState, MRBus& mrbus)
 {
@@ -303,6 +342,9 @@ void loop()
         uint32_t color = WS2812_RED;
         esp_task_wdt_reset();
 
+        // Will only send time if we have a fast time source
+        sendMRBusTimePacket(systemState, mrbus);
+
         Serial.printf("[SYS]: TICK %05us stack: %d heap:%d Wifi=%c CmdStn=%c\n", (uint32_t)(esp_timer_get_time() / 1000000), uxTaskGetStackHighWaterMark(NULL), xPortGetFreeHeapSize(), systemState.isWifiConnected?'Y':'N', systemState.isCmdStnConnected?'Y':'N');
 
         systemState.baseAddress = switches.baseAddressGet();
@@ -329,7 +371,7 @@ void loop()
           color = WS2812_YELLOW;
           
         ws2812Set(color);
-
+        // Send our version and status out every second
         sendMRBusVersionPacket(systemState, mrbus);
       }
       mrbus.processSerial();
@@ -413,16 +455,38 @@ void loop()
           systemState.isCmdStnConnected = true;
           // Nuke any throttles that may be left over from last time.
 
+          char macBuffer[16];
+          snprintf(macBuffer, sizeof(macBuffer)-1, "%02X%02X", systemState.macAddr[4], systemState.macAddr[5]);
+
           // Create command station object
           switch(systemState.cmdStnType)
           {
             case CMDSTN_JMRI:
-              systemState.cmdStn = new WiThrottle;
+              systemState.cmdStn = new WiThrottle(macBuffer);
               systemState.cmdStn->begin(systemState.cmdStnConnection, 0, systemState.debugLvlCommandStation);
+              if (FC_SOURCE_CMDSTN == systemState.fcSource)
+              {
+                if (systemState.cmdStn->fastClockConnect(&systemState.fastClock))
+                {
+                  systemState.fastClock.enable();
+                } else {
+                  systemState.fastClock.disable();
+                }
+              }
+
               break;
             case CMDSTN_LNWI:
-              systemState.cmdStn = new WiThrottle;
+              systemState.cmdStn = new WiThrottle(macBuffer);
               systemState.cmdStn->begin(systemState.cmdStnConnection, WITHROTTLE_QUIRK_LNWI, systemState.debugLvlCommandStation);
+              if (FC_SOURCE_CMDSTN == systemState.fcSource)
+              {
+                if (systemState.cmdStn->fastClockConnect(&systemState.fastClock))
+                {
+                  systemState.fastClock.enable();
+                } else {
+                  systemState.fastClock.disable();
+                }
+              }
               break;
             case CMDSTN_ESU:
               systemState.cmdStn = new ESUCabControl;

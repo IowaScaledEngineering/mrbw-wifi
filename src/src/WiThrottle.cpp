@@ -3,7 +3,14 @@
 
 WiThrottle::WiThrottle()
 {
+  WiThrottle(NULL);
+}
+
+WiThrottle::WiThrottle(const char* additionalIdentStr)
+{
+  memset(this->additionalIdentStr, 0, sizeof(this->additionalIdentStr));
   this->debug = DBGLVL_INFO;
+  this->fastClock = NULL;
   this->lnwiMode = false;
   this->cmdStnConnection = NULL;
   this->rxBuffer = new uint8_t[WITHROTTLE_RX_BUFFER_SZ];
@@ -12,6 +19,10 @@ WiThrottle::WiThrottle()
   this->keepaliveTimer.setup(10000);
   for(uint32_t i=0; i<MAX_THROTTLES; i++)
     this->throttleStates[i] = NULL;
+
+  if (NULL != additionalIdentStr)
+    strncpy(this->additionalIdentStr, additionalIdentStr, sizeof(this->additionalIdentStr)-1);
+
 }
 
 WiThrottle::~WiThrottle()
@@ -100,8 +111,23 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
   buffer[rxDataLen] = 0;
   rxStr = trim(rxStr);
 
+  // Nothing to do if it's an empty string
+  if (0 == strlen(rxStr))
+    return;
+
   if (IS_DBGLVL_DEBUG)
     Serial.printf("[WTHR]: RX processResponse [%s]\n", rxStr);
+
+  if (0 == strncmp(rxStr, "AT+CIPSENDBUF", 13))
+  {
+    // Oh Digitrax, your crappy LNWI spewed out ESP8266 AT commands...
+    // We'll just make it better and strip it off for you
+    if (IS_DBGLVL_DEBUG)
+      Serial.printf("[WTHR]: LNWI Gibberish: [%s]\n", rxStr);
+    uint32_t len = strlen(rxStr) - 13;
+    memmove(rxStr, rxStr + 13, len);
+    rxStr[len] = 0;
+  }
 
   if (0 == strncmp(rxStr, "PPA", 3))
   {
@@ -218,8 +244,46 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
     if (NULL != cmd)
       free(cmd);
   }
+  else if (0 == strncmp(rxStr, "PFT", 3))
+  {
+    if (NULL != this->fastClock)
+    {
+      uint32_t seconds = 0;
+      float ratioFloat = 0.0;
+
+      // FIXME:  This is broken, ratioFraction doesn't know how many leading zeros it has
+      if (2 == sscanf(rxStr, "PFT%u<;>%f", &seconds, &ratioFloat))
+      {
+        seconds %= 86400; // Some systems use essentially unix epoch time, others just use 0-86399
+
+        uint32_t ratio = ratioFloat * 1000;
+
+        if (IS_DBGLVL_INFO)
+          Serial.printf("[WTHR]: Got fast time of %02d:%02d, ratio %u\n", seconds / 3600, (seconds / 60) % 60, ratio);
+
+        if (0 == ratio)
+        {
+          this->fastClock->stop();
+          this->fastClock->setTime(seconds, ratio);
+        } else {
+          this->fastClock->setTime(seconds, ratio);
+          this->fastClock->start();
+        }
+
+      } else {
+        if (IS_DBGLVL_INFO)
+          Serial.printf("[WTHR]: looked like fast time, didn't parse [%s]\n", rxStr);
+      }
+    }
+    else
+    {
+      if (IS_DBGLVL_INFO)
+        Serial.printf("[WTHR]: Fast clock [%s] rx, unused\n", rxStr);
+    }
+  }
   else
   {
+
     if (IS_DBGLVL_WARN)
       Serial.printf("[WTHR]: RX Unhandled host->client [%s]\n", rxStr);
   }
@@ -227,8 +291,21 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
   free(buffer);
 }
 
+bool WiThrottle::fastClockConnect(Clock* fastClock)
+{
+  this->fastClock = fastClock;
+  return true;
+}
+
+void WiThrottle::fastClockDisconnect()
+{
+  this->fastClock = NULL;
+}
+
+
 bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl)
 {
+  this->fastClock = NULL;
   this->debug = debugLvl;
   this->cmdStnConnection = &cmdStnConnection;
   if (quirkFlags & WITHROTTLE_QUIRK_LNWI)
@@ -244,8 +321,17 @@ bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_
   if (IS_DBGLVL_INFO)
     Serial.printf("[WTHR]: JMRI begin()\n");
 
-  this->rxtx("NProtoThrottle Bridge\n");
-  this->rxtx("HUProtoThrottle Bridge\n");
+  if (0 == strlen(this->additionalIdentStr))
+  {
+    this->rxtx("NProtoThrottle Bridge\n");
+    this->rxtx("HUProtoThrottle Bridge\n");
+  } else {
+    char bridgeNameStr[128];
+    snprintf(bridgeNameStr, sizeof(bridgeNameStr), "NProtoThrottle Bridge %s\n", this->additionalIdentStr);
+    this->rxtx(bridgeNameStr);
+    snprintf(bridgeNameStr, sizeof(bridgeNameStr), "HUProtoThrottle Bridge %s\n", this->additionalIdentStr);
+    this->rxtx(bridgeNameStr);
+  }
 
   return true;
 }

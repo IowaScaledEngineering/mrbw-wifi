@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <WiFi.h>
 #include "ThrottleState.h"
+#include "Clock.h"
 
 class CmdStnLocRef
 {
@@ -17,6 +18,8 @@ class CmdStnLocRef
 class CommandStation
 {
   public:
+    virtual bool fastClockConnect(Clock* fastClock);
+    virtual void fastClockDisconnect();
     virtual bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl);
     virtual bool end();
     virtual bool update();

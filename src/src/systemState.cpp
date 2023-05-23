@@ -18,7 +18,7 @@ SystemState::SystemState()
   this->conflictingBaseTimer.reset();
   this->conflictingBase = false;
   this->ipDisplayLine = DISPLAY_IP_LOCAL;
-
+  this->fcSource = FC_SOURCE_OFF;
   this->debugLvlSystem = DBGLVL_INFO;
   this->debugLvlMRBus = DBGLVL_INFO;
   this->debugLvlCommandStation = DBGLVL_INFO;
@@ -192,6 +192,12 @@ bool SystemState::configRead(fs::FS &fs)
     else if (0 == strcmp(keyStr, "hostname"))
     {
       strncpy(this->hostname, valueStr, sizeof(this->hostname));
+    }
+    else if (0 == strcmp(keyStr, "fastClockSource"))
+    {
+      this->fcSource = FC_SOURCE_OFF;
+      if (0 == strcmp(valueStr, "cmdstn"))
+        this->fcSource = FC_SOURCE_CMDSTN;
     }
     else if (0 == strcmp(keyStr, "logLevel"))
     {

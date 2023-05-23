@@ -1,5 +1,6 @@
 #pragma once
 #include "CommandStation.h"
+#include "Clock.h"
 #include "periodicEvent.h"
 
 
@@ -19,6 +20,8 @@ class WiThrottle : public CommandStation
   private:
     const char *validThrottleLetters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     WiFiClient *cmdStnConnection;
+    Clock* fastClock;
+    char additionalIdentStr[32];
     bool lnwiMode;
     uint8_t* rxBuffer;
     uint32_t rxBufferUsed;
@@ -33,7 +36,12 @@ class WiThrottle : public CommandStation
 
   public:
     WiThrottle();
+    WiThrottle(const char *additionalIdentStr);
     ~WiThrottle();
+
+    bool fastClockConnect(Clock* fastClock);
+    void fastClockDisconnect();
+
     void rxtx();
     void rxtx(const char * cmdStr);
     uint8_t getMultiThrottleLetter(uint8_t mrbusAddr, ThrottleState *tState);

@@ -7,6 +7,7 @@
 #include "CommandStation.h"
 #include "periodicEvent.h"
 #include "commonFuncs.h"
+#include "Clock.h"
 
 #define CONFIG_FILE_PATH "/config.txt"
 #define STRLN_SSID      32
@@ -30,6 +31,14 @@ typedef enum
   DISPLAY_IP_CMDSTN2    = 3,
   DISPLAY_IP_MAX_FIELDS
 } IPLineDisplay;
+
+typedef enum
+{
+  FC_SOURCE_OFF         = 0,
+  FC_SOURCE_CMDSTN      = 1
+} FastClockSource;
+
+
 
 class SystemState
 {
@@ -58,7 +67,8 @@ class SystemState
     bool cmdStnTypeSetByConfig;
     IPAddress localIP;
     WiFiClient cmdStnConnection;
-
+    Clock fastClock;
+    FastClockSource fcSource;
     PeriodicEvent conflictingBaseTimer;
     bool conflictingBase;
     CommandStation* cmdStn;
