@@ -2,7 +2,26 @@
 
 Wireless MRBus to WiFi (802.11) Bridge for ProtoThrottles
 
+# Getting Started
+
+If you're using an ESU CabControl system with the built-in wifi and default configuration (ssid of ESU-WIFI and default password), LNWI, MRC WiFi module, DCC-EX, or Steve Todd's rpi-jmri image, it should just work.  Plug it in, try it out.
+
+If you're using JMRI or any non-default wifi parameters, you'll need to at least set the ssid, password, and mode configuration options.
+
 # Configuration Options
+
+## The Onboard Switches
+
+| Switch | Label | Description                                                                     |
+|--------|-------|---------------------------------------------------------------------------------------|
+| 1 | Base Addr 16 | Part of setting the ProtoThrottle base address.  Adds 16 to the value if on.  Total sum value of switches 1-5 (the group marked BASE ADDR) must match the base configured in the PT COMM menu. |
+| 2 | Base Addr 8 | Part of setting the ProtoThrottle base address.  Adds 8 to the value if on. |
+| 3 | Base Addr 4 | Part of setting the ProtoThrottle base address.  Adds 4 to the value if on. |
+| 4 | Base Addr 2 | Part of setting the ProtoThrottle base address.  Adds 2 to the value if on. |
+| 5 | Base Addr 1 | Part of setting the ProtoThrottle base address.  Adds 1 to the value if on. |
+| 6 | A | Not used - for future expansion. |
+| 7 | FR | Factory Reset.  If this switch is ON when the unit is powered up or resets, it will overwrite the config.txt file with the factory defaults. |
+| 8 | BL | Boot Loader. This is used to upgrade the firmware on the mrbw-wifi.  See the "Firmware Upgrade" section for details on use.  Leave this off for normal operations. |
 
 ## Automagic Configuration
 
@@ -33,8 +52,15 @@ Here's a list of valid parameters in the config.txt file:
 | fastClockSource  | For JMRI, fast time is sent over the withrottle connection.  If you want to send fast time from your JMRI server via the wifi bridge to your ProtoThrottles and/or ISE fast clock remote displays, set this to `cmdstn`.  To disable any fast time being broadcast by the wifi bridge, set it to `none` or omit the parameter entirely. |
 | logLevel  | *Advanced Users Only* The wifi bridge exposes a virtual serial port on the USB interface that it uses to send diagnostic logging information about what it's doing.  logLevel controls the verbosity at a global level.  Options in order of increasing verbosity are  `error`, `warn`, `info`, `debug`.  By default, it's set to `info` if not specified.  Unless you're watching the logs and trying to help us debug a specific problem, there's no reason to use this parameter.  In addition, you can use `logLevelCommandStation`, `logLevelMRBus`, or `logLevelSystem` as key values to turn up logging on only a specific part of the code that's having an issue. |
 
+# Firmware Upgrades
 
+The mrbw-wifi is designed to be easily upgradable, both because I know I'm going to have bugs and we're going to add new functionality in the future.
 
+For most users, you'll upgrade via the UF2 bootloader.  Hold the receiver with both hands while it's powered up and plugged into your computer via a USB cord.  Use your left hand to tap the reset button, and immediately flip the BL switch to ON while the LED is purple.  You have 1 second from when you hit the reset button to do this, otherwise the system will boot normally.
+
+If you've done it successfully, a new drive will apear on your machine (named "MRBWWIFI") with three files in it:  current.uf2, index.htm, and info_uf2.txt.
+
+Find the firmware you want to upgrade to (it should be a file ending in .uf2) and copy it to this drive.  The LED should blink yellow and the mrbw-wifi should reboot at the end.  It may throw some sort of error on the computer at the end of the copy - don't worry about that.  Once it's done, turn the BL switch back to off and then hit RESET again.  You should be able to verify a successful upgrade by checking the version on the startup screen matches the version you upgraded to.
 
 # Credits
 
