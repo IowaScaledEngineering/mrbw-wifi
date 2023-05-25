@@ -192,6 +192,9 @@ bool sendMRBusVersionPacket(SystemState& systemState, MRBus& mrbus)
   } else if (systemState.isWifiConnected && systemState.isCmdStnConnected) {
     switch(systemState.cmdStnType)
     {
+        case CMDSTN_DCCEX:
+          memcpy(versionPkt.data + 7, "WF-DCCX", 7);
+          break;
         case CMDSTN_JMRI:
           memcpy(versionPkt.data + 7, "WF-WTHR", 7);
           break;
@@ -208,6 +211,7 @@ bool sendMRBusVersionPacket(SystemState& systemState, MRBus& mrbus)
   } else {
     memcpy(versionPkt.data + 7, "WF-XXX", 7);
   }
+
   return mrbus.txPktQueue->push(versionPkt);
 }
 
@@ -239,6 +243,9 @@ void drawStatusScreen(SystemState& state)
     case CMDSTN_LNWI:
       cmdStnStr = "LNWI";
       break;
+    case CMDSTN_DCCEX:
+      cmdStnStr = "DCCX";
+      break;      
     case CMDSTN_JMRI:
       cmdStnStr = "WTHR";
       break;
@@ -415,10 +422,12 @@ void loop()
       }
       else if (WiFi.status() != WL_CONNECTED)  // This implies that systemState.isWifiConnected is true
       {
+        Serial.printf("[SYS]: Wireless Dropped, Resetting\n");
+        MDNS.end();
         systemState.localIP.fromString("0.0.0.0");
         systemState.isWifiConnected = false;
-        MDNS.end();
         systemState.cmdStnDisconnect();
+
       }
 
       if (!systemState.isWifiConnected || tmrStatusScreenUpdate.test(false))
@@ -430,12 +439,17 @@ void loop()
         if (!systemState.cmdStnConnection.connected())
         {
           Serial.printf("[SYS]: Stopping command station socket connection\n\n");
+          Serial.flush();
+          sys_delay_ms(1000);
           systemState.cmdStnConnection.stop();
 
           if (NULL != systemState.cmdStn)
           {
             Serial.printf("[SYS]: Deleting disconnected command station\n\n");
+            Serial.flush();
+            sys_delay_ms(1000);
             systemState.cmdStnDisconnect();
+            return; // Just start the loop again.
           }
         }
       }
@@ -453,31 +467,32 @@ void loop()
         if (connectSuccessful)
         {
           systemState.isCmdStnConnected = true;
-          // Nuke any throttles that may be left over from last time.
-
           char macBuffer[16];
           snprintf(macBuffer, sizeof(macBuffer)-1, "%02X%02X", systemState.macAddr[4], systemState.macAddr[5]);
+          uint32_t quirkFlags = 0;
+
+          // Nuke any throttles that may be left over from last time.
+          for(uint32_t thrNum=0; thrNum<MAX_THROTTLES; thrNum++)
+          {
+            throttles[thrNum].initialize(MRBUS_THROTTLE_BASE_ADDR + thrNum, systemState.debugLvlMRBus);
+          }
 
           // Create command station object
           switch(systemState.cmdStnType)
           {
             case CMDSTN_JMRI:
-              systemState.cmdStn = new WiThrottle(macBuffer);
-              systemState.cmdStn->begin(systemState.cmdStnConnection, 0, systemState.debugLvlCommandStation);
-              if (FC_SOURCE_CMDSTN == systemState.fcSource)
-              {
-                if (systemState.cmdStn->fastClockConnect(&systemState.fastClock))
-                {
-                  systemState.fastClock.enable();
-                } else {
-                  systemState.fastClock.disable();
-                }
-              }
-
-              break;
+            case CMDSTN_DCCEX:
             case CMDSTN_LNWI:
+              // These are all variants of the WiThrottle protocol, but all implement it just a little differently
+              // The main difference right now is that DCC-EX and LNWI do not support the "force function" ('f') command
+              //  which is bloody annoying
+              if (CMDSTN_LNWI == systemState.cmdStnType)
+                quirkFlags |= WITHROTTLE_QUIRK_LNWI;
+              else if (CMDSTN_DCCEX == systemState.cmdStnType)
+                quirkFlags |= WITHROTTLE_QUIRK_DCCEX;
+
               systemState.cmdStn = new WiThrottle(macBuffer);
-              systemState.cmdStn->begin(systemState.cmdStnConnection, WITHROTTLE_QUIRK_LNWI, systemState.debugLvlCommandStation);
+              systemState.cmdStn->begin(systemState.cmdStnConnection, quirkFlags, systemState.debugLvlCommandStation);
               if (FC_SOURCE_CMDSTN == systemState.fcSource)
               {
                 if (systemState.cmdStn->fastClockConnect(&systemState.fastClock))
@@ -488,10 +503,12 @@ void loop()
                 }
               }
               break;
+
             case CMDSTN_ESU:
               systemState.cmdStn = new ESUCabControl;
               systemState.cmdStn->begin(systemState.cmdStnConnection, 0, systemState.debugLvlCommandStation);
               break;
+
             default: // Do nothing, don't know what it is
               break;
           }

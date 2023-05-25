@@ -12,6 +12,7 @@ WiThrottle::WiThrottle(const char* additionalIdentStr)
   this->debug = DBGLVL_INFO;
   this->fastClock = NULL;
   this->lnwiMode = false;
+  this->dccexMode = false;
   this->cmdStnConnection = NULL;
   this->rxBuffer = new uint8_t[WITHROTTLE_RX_BUFFER_SZ];
   memset(this->rxBuffer, 0, WITHROTTLE_RX_BUFFER_SZ);
@@ -165,6 +166,9 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
       this->keepaliveMaxInterval = 2;
     this->keepaliveTimer.setup((this->keepaliveMaxInterval / 2) * 1000);
     this->keepaliveTimer.reset();
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[WTHR]: Heartbeat set %us\n", this->keepaliveMaxInterval);
+
   }
   else if (0 == strncmp(rxStr, "N", 1))
   {
@@ -310,6 +314,8 @@ bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_
   this->cmdStnConnection = &cmdStnConnection;
   if (quirkFlags & WITHROTTLE_QUIRK_LNWI)
     this->lnwiMode = true;
+  else if (quirkFlags & WITHROTTLE_QUIRK_DCCEX)
+    this->dccexMode = true;
 
   memset(this->rxBuffer, 0, WITHROTTLE_RX_BUFFER_SZ);
   this->rxBufferUsed = 0;
@@ -332,18 +338,16 @@ bool WiThrottle::begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_
     snprintf(bridgeNameStr, sizeof(bridgeNameStr), "HUProtoThrottle Bridge %s\n", this->additionalIdentStr);
     this->rxtx(bridgeNameStr);
   }
-
+  // Turn on heartbeat monitoring for the connection
+  this->rxtx("*+\n");
   return true;
 }
 
 bool WiThrottle::end()
 {
-
-  this->cmdStnConnection = NULL;
-  // Nuke the command station connection pointer
   for(uint32_t i=0; i<MAX_THROTTLES; i++)
   {
-    if (NULL != this->throttleStates[i]->locCmdStnRef)
+    if (NULL != this->throttleStates[i] && NULL != this->throttleStates[i]->locCmdStnRef)
     {
       free(this->throttleStates[i]->locCmdStnRef);
       this->throttleStates[i]->locCmdStnRef = NULL;
@@ -355,6 +359,9 @@ bool WiThrottle::end()
     free(this->rxBuffer);
   this->rxBuffer = NULL;
   this->rxBufferUsed = 0;
+
+  // Nuke the command station connection pointer
+  this->cmdStnConnection = NULL;
   return true;
 }
 
@@ -362,7 +369,11 @@ bool WiThrottle::update()
 {
   // FIXME:  We should send a keepalive here if we have a period of inactivity
   if (this->keepaliveTimer.test(true))
+  {
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[WTHR]: Send keepalive\n");
     this->rxtx("*\n");
+  }
   else
     this->rxtx();
 
@@ -515,7 +526,7 @@ bool WiThrottle::locomotiveFunctionSet(ThrottleState* tState, uint8_t funcNum, b
   WiThrottleLocRef* locCmdStnRef = (WiThrottleLocRef*)(tState->locCmdStnRef);
   if (IS_DBGLVL_INFO)
     Serial.printf("[WTHR]: locomotiveFunctionSet(%c%d/%c) F%0d = %d\n", locCmdStnRef->isLongAddr?'L':'S', locCmdStnRef->locAddr, locCmdStnRef->multiThrottleLetter, funcNum, funcActive);
-  if (this->lnwiMode)
+  if (this->lnwiMode || this->dccexMode)
     return this->locomotiveFunctionSetLNWI(tState, funcNum, funcActive);
   else
     return this->locomotiveFunctionSetJMRI(tState, funcNum, funcActive);
@@ -537,7 +548,8 @@ bool WiThrottle::locomotiveDisconnect(ThrottleState* tState)
     this->rxtx(cmdBuffer);
 
     this->releaseMultiThrottleLetter(locCmdStnRef->mrbusAddr);
-    delete locCmdStnRef;
+    if (NULL != locCmdStnRef)
+      delete locCmdStnRef;
     tState->locCmdStnRef = NULL;
     tState->locAddr = 0;
     tState->isLongAddr = false;

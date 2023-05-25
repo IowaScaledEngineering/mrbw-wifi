@@ -5,6 +5,7 @@
 
 
 #define WITHROTTLE_QUIRK_LNWI    0x00000001
+#define WITHROTTLE_QUIRK_DCCEX   0x00000002
 #define WITHROTTLE_RX_BUFFER_SZ  2048
 
 class WiThrottleLocRef : public CmdStnLocRef
@@ -23,6 +24,7 @@ class WiThrottle : public CommandStation
     Clock* fastClock;
     char additionalIdentStr[32];
     bool lnwiMode;
+    bool dccexMode;
     uint8_t* rxBuffer;
     uint32_t rxBufferUsed;
     PeriodicEvent keepaliveTimer;

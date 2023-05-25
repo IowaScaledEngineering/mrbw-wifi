@@ -62,16 +62,20 @@ bool SystemState::configWriteDefault(fs::FS &fs)
 
 bool SystemState::cmdStnDisconnect()
 {
-  if (this->isCmdStnConnected)
+  if (DBGLVL_INFO)
+    Serial.printf("[SYS]: cmdStnDisconnect()\n");
+
+  if (this->isCmdStnConnected && NULL != this->cmdStn)
   {
       this->cmdStn->end();
-      delete this->cmdStn;
+      free(this->cmdStn);
   }
+  this->isCmdStnConnected = false;
+  this->cmdStn = NULL;
   // Handles the case where the cmd station might be still set from a previous instance
   // If we didn't set it through the configuration file, then just clear it out
   if (!this->cmdStnTypeSetByConfig)
     this->cmdStnType = CMDSTN_NONE;
-  this->isCmdStnConnected = false;
   return true;
 }
 
@@ -159,6 +163,11 @@ bool SystemState::configRead(fs::FS &fs)
       if (0 == strcmp(valueStr, "lnwi"))
       {
         this->cmdStnType = CMDSTN_LNWI;
+        this->cmdStnTypeSetByConfig = true;
+      }
+      else if (0 == strcmp(valueStr, "dccex"))
+      {
+        this->cmdStnType = CMDSTN_DCCEX;
         this->cmdStnTypeSetByConfig = true;
       }
       else if (0 == strcmp(valueStr, "withrottle"))
@@ -366,7 +375,7 @@ bool SystemState::cmdStnIPSetup()
 
   const char* svcNameStr = "";
 
-  if (CMDSTN_LNWI == this->cmdStnType || CMDSTN_JMRI == this->cmdStnType)
+  if (CMDSTN_LNWI == this->cmdStnType || CMDSTN_JMRI == this->cmdStnType || CMDSTN_DCCEX == this->cmdStnType)
   {
     svcNameStr = "withrottle";
   } else if (CMDSTN_ESU == this->cmdStnType) { 
@@ -400,7 +409,7 @@ bool SystemState::cmdStnIPSetup()
   // As a last resort, try hard-coded rules about where certain devices (LNWIs, ESUs)
   //  live based on just how they're built.
   if (CMDSTN_LNWI == this->cmdStnType
-    || (CMDSTN_JMRI == this->cmdStnType && isDccExSSID(this->ssid))
+    || (CMDSTN_DCCEX == this->cmdStnType && isDccExSSID(this->ssid))
     || (CMDSTN_ESU == this->cmdStnType && 0 == strcmp(this->ssid, "ESUWIFI")))
   {
     // LNWIs are always (?) on .1
@@ -518,10 +527,10 @@ bool SystemState::wifiScan()
 
       break;
     }
-    else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_JMRI) && isDccExSSID(ssid.c_str()))
+    else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_DCCEX) && isDccExSSID(ssid.c_str()))
     {
       // Auto-configuration for DCC-EX Command Stations
-      this->cmdStnType = CMDSTN_JMRI;
+      this->cmdStnType = CMDSTN_DCCEX;
       strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
       if (auth != WIFI_AUTH_OPEN)
         snprintf(this->password, sizeof(this->password), "PASS_%s", ssid.c_str()+6);

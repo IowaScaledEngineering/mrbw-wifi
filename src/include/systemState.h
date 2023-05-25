@@ -20,7 +20,8 @@ typedef enum
   CMDSTN_NONE        = 0,
   CMDSTN_LNWI        = 1,
   CMDSTN_JMRI        = 2,
-  CMDSTN_ESU         = 3
+  CMDSTN_DCCEX       = 3,
+  CMDSTN_ESU         = 100
 } CommandStationType;
 
 typedef enum
