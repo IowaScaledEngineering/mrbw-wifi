@@ -1,3 +1,2 @@
 Things to do / fix yet:
  - Document object model and where crap goes
- - Handle fast time in withrottle

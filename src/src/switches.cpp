@@ -33,3 +33,9 @@ uint8_t Switches::baseAddressGet()
   this->refresh();
   return this->baseAddress;
 }
+
+uint8_t Switches::factoryResetGet()
+{
+  this->refresh();
+  return this->switchFR;
+}

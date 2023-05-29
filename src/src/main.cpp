@@ -58,23 +58,25 @@ void setup()
   esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
   esp_task_wdt_add(NULL); //add current thread to WDT watch
   esp_task_wdt_reset();
-  ws2812Set(0x0f0000);
+  ws2812Set(WS2812_RED);
 
   // Try to mount the FFat partition, format if it can't find it
   systemState.isFSConnected = FFat.begin(true);
 
   // See if we have a config file.  If we don't, just blow away the partition
-  if (systemState.isFSConnected)
+  if (systemState.isFSConnected || switches.factoryResetGet())
   {
     File f = FFat.open(CONFIG_FILE_PATH);
-    if (!f || f.isDirectory())
+    if (!f || f.isDirectory() || switches.factoryResetGet())
     {
+      ws2812Set(WS2812_BLUE);
       // Shut it down, reformat, start over - nuclear approach!
       FFat.end();
       FFat.format(true);
       systemState.isFSConnected = FFat.begin(true);
       if (systemState.isFSConnected)
         systemState.configWriteDefault(FFat);
+      ws2812Set(WS2812_RED);
     }
   }
 

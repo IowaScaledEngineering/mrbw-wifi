@@ -15,4 +15,5 @@ class Switches
         void setup();
         void refresh();
         uint8_t baseAddressGet();
+        uint8_t factoryResetGet();
 };
