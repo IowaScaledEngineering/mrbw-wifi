@@ -1,7 +1,7 @@
 MRBW-WIFI Firmware Changelog
 
 -----------------------------------------------
-1.0.6 (???) - 29 May 2023
+1.0.6 (2c3e76) - 29 May 2023
 
 BUG FIX: FR switch didn't actually cause a factory reset of the internal
  configuration drive / config.txt file.  Also turn the status LED blue to indicate
