@@ -1,4 +1,14 @@
-Changelog
+MRBW-WIFI Firmware Changelog
+
+-----------------------------------------------
+1.0.5 (???) - 29 May 2023
+
+BUG FIX: Fix issue where receiver would crash when disconnecting from a command
+ station if the wifi network had failed / gone away.
+
+FEATURE: Better support for DCC-EX by separating it out as its own command station
+ type and implementing specific quirks (such as not supporting force function 'f')
+
 -----------------------------------------------
 1.0.4 (c5984b) - 22 May 2023
 
@@ -25,8 +35,6 @@ FEATURE: Added display of both the receiver's IP address and the command station
 CLEANUP: Cleaned up serial console logging and added the ability to set the log 
  level in the config.txt file so that you can turn up the logging if we run into 
  a problem we can't duplicate.  
-
-
 
 -----------------------------------------------
 ** 1.0.3 (c2c668) - 20 May 2023
