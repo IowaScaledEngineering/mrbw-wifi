@@ -149,8 +149,9 @@ Step 1: Set BL and FR switch to off (leave rest on), program XBee with ISE param
 
 Step 2: Set BL to on, reset, program ESP32-S2 with master firmware image
 
-esptool -c esp32s2 -p /dev/ttyACM0 erase_flash
-esptool -c esp32s2 -p /dev/ttyACM0 write_flash 0 mrbwwifi-master.bin
+esptool.py -c esp32s2 -p /dev/ttyACM0 erase_flash
+
+esptool.py -c esp32s2 -p /dev/ttyACM0 write_flash 0 mrbwwifi-[version]-master.bin
 
 Step 3: Turn BL switch off, hit reset button.  Verify LED goes purple, then red, and screen comes up.  The screen takes a while as it's formatting the FAT partition.
 
