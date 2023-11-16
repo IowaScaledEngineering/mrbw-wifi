@@ -1,0 +1,21 @@
+#!/bin/bash
+
+while true
+do
+	make read > /dev/null 2> /dev/null
+
+	echo -e "\n\033[1;33mProgramming\033[0m\n"
+	espeak "Programming"
+
+	esptool.py -c esp32s2 -p /dev/ttyACM0 erase_flash
+	esptool.py -c esp32s2 -p /dev/ttyACM0 write_flash 0 releases/mrbwwifi-1_0_6-2c3e76-master.bin
+
+	echo -e "\033[0;32mComplete\033[0m\n"
+	espeak "Complete"
+
+	sleep 1
+
+	read -t 0.1 -n 1000 discard
+	read -n 1 -p "Press any key to continue..."
+	echo
+done
