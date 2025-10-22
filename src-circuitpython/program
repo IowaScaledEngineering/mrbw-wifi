@@ -1,6 +1,0 @@
-#!/bin/bash
-
-sudo chmod 0666 /dev/ttyACM0 ; esptool.py --port /dev/ttyACM0 --after=no_reset write_flash 0x0 releases/mrbwwifi-base-20221212-8d48734-1_0_4.bin
-
-
-
