@@ -1,21 +1,81 @@
 #!/bin/bash
 
+firmware=releases/mrbwwifi-1_0_6-2c3e76-master.bin
+
+if [ $# -eq 0 ]
+  then
+    port=/dev/ttyACM0
+  else
+    port=$1
+fi
+
 while true
 do
-	make read > /dev/null 2> /dev/null
+	success=1
+
+	echo
+
+	echo -n "Waiting for port"
+	touch $port > /dev/null 2> /dev/null
+	while [ $? -ne 0 ]
+	do
+		echo -n .
+		sleep 1
+		touch $port > /dev/null 2> /dev/null
+	done
+	
+	echo
+
+	echo "Performing 1200bps touch reset..."
+	stty -F /dev/ttyACM0 1200
+
+	echo -n "Waiting for port"
+	touch $port > /dev/null 2> /dev/null
+	while [ $? -ne 0 ]
+	do
+		echo -n .
+		sleep 1
+		touch $port > /dev/null 2> /dev/null
+	done
+
+	echo
 
 	echo -e "\n\033[1;33mProgramming\033[0m\n"
 	espeak "Programming"
 
-	esptool.py -c esp32s2 -p /dev/ttyACM0 erase_flash
-	esptool.py -c esp32s2 -p /dev/ttyACM0 write_flash 0 releases/mrbwwifi-1_0_6-2c3e76-master.bin
+	echo Programming Try \#1...
+	esptool --chip esp32s2 --port $port write-flash 0x0 $firmware
 
-	echo -e "\033[0;32mComplete\033[0m\n"
-	espeak "Complete"
+	if [ $? -ne 0 ]
+	then
+	        echo Programming Try \#2...
+	        echo Wait...
+	        sleep 1
+		esptool --chip esp32s2 --port $port write-flash 0x0 $firmware
+		if [ $? -ne 0 ]
+		then
+			success=0
+		fi
+	fi
 
-	sleep 1
+	if (( $success == 1 ))
+	then
+		echo
+		echo -e "\033[0;32mComplete\033[0m\n"
+		espeak "Complete"
+	else
+		echo
+		echo -e "\033[0;31mFailed\033[0m\n"
+		espeak "Failed"
+	fi
 
-	read -t 0.1 -n 1000 discard
-	read -n 1 -p "Press any key to continue..."
-	echo
+	sleep 2
+
+	touch $port > /dev/null 2> /dev/null
+	while [ $? -eq 0 ]
+	do
+		echo -n +
+		sleep 1
+		touch $port > /dev/null 2> /dev/null
+	done
 done
