@@ -220,7 +220,7 @@ uint32_t I2CDisplay::putstr(const char* s, int32_t x, int32_t y)
   
   while(*s)
   {
-    charsWritten += putc((const uint8_t)*s++, charsWritten?-1:x, charsWritten?-1:y);
+    charsWritten += putc((uint8_t)*s++, charsWritten?-1:x, charsWritten?-1:y);
   }
   return charsWritten;
 }
