@@ -61,22 +61,45 @@ void WiThrottle::rxtx(const char* cmdStr)
   if (available <= 0)
     return;
 
+  int32_t bytesRemaining = WITHROTTLE_RX_BUFFER_SZ - this->rxBufferUsed - 1;
+  if (bytesRemaining <= 0)
+  {
+    // We've got 2048 bytes in the buffer and no end of line.  No response to anything we care about is that big, just trash it and keep going
+    // This helps with JMRI suddenly sends us a multi-thousand unit roster or some such
+    while (this->cmdStnConnection->available())
+    {
+      char a = this->cmdStnConnection->read();
+      if ('\n' == a)
+      {
+        memset(this->rxBuffer, 0, WITHROTTLE_RX_BUFFER_SZ);
+        this->rxBufferUsed = 0;
+        Serial.printf("[WTHR]: RX buffer overflow, dumping\n");
+        break;
+      }
+    }
+
+    bytesRemaining = WITHROTTLE_RX_BUFFER_SZ - this->rxBufferUsed - 1;
+  }
+
   uint32_t bytesRead = this->cmdStnConnection->readBytes(this->rxBuffer + this->rxBufferUsed, MIN(available, WITHROTTLE_RX_BUFFER_SZ - this->rxBufferUsed - 1));
   this->rxBufferUsed += bytesRead;
   if (0 == bytesRead)
     return;
 
-  if (IS_DBGLVL_DEBUG)
-    Serial.printf("[WTHR]: RX [%s]\n", this->rxBuffer);
-
   uint8_t *ptr = this->rxBuffer;
   uint8_t *endPtr = NULL; 
+
   while (NULL != (endPtr = (uint8_t*)strchr((const char*)ptr, '\n')))
   {
     uint32_t len = endPtr - ptr;
     *endPtr = 0; // Replace the \n with a NULL - maybe we can process it in place?
-    this->processResponse(ptr, len);
+    if (len > 0)
+    {
+      if (IS_DBGLVL_DEBUG)
+        Serial.printf("[WTHR]: RX [%s]\n", ptr);
 
+      this->processResponse(ptr, len);
+    }
     memmove(ptr, endPtr+1, this->rxBufferUsed - (len+1));
     this->rxBufferUsed -= len+1;
     this->rxBuffer[rxBufferUsed] = 0;
@@ -107,14 +130,18 @@ void WiThrottle::releaseMultiThrottleLetter(uint8_t mrbusAddr)
 void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
 {
   char* buffer = (char*)calloc(rxDataLen+1, sizeof(char));
-  char *rxStr = buffer; 
+  char *rxStr = buffer;
   memcpy(buffer, rxData, rxDataLen);
   buffer[rxDataLen] = 0;
   rxStr = trim(rxStr);
 
   // Nothing to do if it's an empty string
   if (0 == strlen(rxStr))
+  {
+    if (NULL != buffer)
+      free(buffer);
     return;
+  }
 
   if (IS_DBGLVL_DEBUG)
     Serial.printf("[WTHR]: RX processResponse [%s]\n", rxStr);
@@ -202,7 +229,6 @@ void WiThrottle::processResponse(const uint8_t* rxData, uint32_t rxDataLen)
         uint8_t dataLen = strlen(data);
         if (IS_DBGLVL_DEBUG)
           Serial.printf("[%s] -> [%s]\n", cmd, data);
-
 
         if (cmdLen >= 3 && 'S' == cmd[2])
         {
