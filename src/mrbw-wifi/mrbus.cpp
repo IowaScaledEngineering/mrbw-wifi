@@ -43,8 +43,7 @@ bool MRBus::begin(uint8_t debugLvl)
     .stop_bits = UART_STOP_BITS_1,
     .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, //UART_HW_FLOWCTRL_CTS_RTS,
     .rx_flow_ctrl_thresh = 122,
-    .source_clk = UART_SCLK_DEFAULT,
-
+    .source_clk = UART_SCLK_DEFAULT
   };
   // Configure UART parameters
   ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
