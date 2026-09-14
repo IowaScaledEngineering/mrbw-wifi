@@ -119,7 +119,7 @@ bool ESUCabControl::end()
   {
     if(NULL != this->throttleStates[i] && NULL != this->throttleStates[i]->locCmdStnRef)
     {
-      free(this->throttleStates[i]->locCmdStnRef);
+      delete this->throttleStates[i]->locCmdStnRef;
       this->throttleStates[i]->locCmdStnRef = NULL;
     }
     this->throttleStates[i] = NULL;
@@ -128,7 +128,7 @@ bool ESUCabControl::end()
   this->cmdStnConnection = NULL;
 
   if (NULL != this->rxBuffer)
-    delete this->rxBuffer;
+    delete[] this->rxBuffer;
 
   this->rxBuffer = NULL;
   this->rxBufferUsed = 0;

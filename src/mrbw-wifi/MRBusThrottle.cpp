@@ -108,7 +108,11 @@ void MRBusThrottle::update(CommandStation* cmdStn, MRBusPacket &pkt)
     bool successfullyAcquired = cmdStn->locomotiveObjectGet(&this->tState, addr, longAddr, this->throttleAddr);
     if (!successfullyAcquired)
     {
-      //FIXME:  We didn't successfully acquire, clean house
+      if (NULL != this->tState.locCmdStnRef)
+      {
+        cmdStn->locomotiveDisconnect(&this->tState);
+        this->tState.locCmdStnRef = NULL;
+      }
       this->tState.init();
       return;
     }

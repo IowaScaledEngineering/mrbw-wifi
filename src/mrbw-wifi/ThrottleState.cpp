@@ -20,7 +20,7 @@ void ThrottleState::init()
   this->locFunctionsGood = false;
   this->lastUpdate = 0;
   if (NULL != this->locCmdStnRef)
-    free(this->locCmdStnRef);
+    delete this->locCmdStnRef;
 
   this->locCmdStnRef = NULL;
 }
@@ -29,6 +29,6 @@ void ThrottleState::init()
 ThrottleState::~ThrottleState()
 {
   if (NULL != this->locCmdStnRef)
-    free(this->locCmdStnRef);
+    delete this->locCmdStnRef;
 }
 

@@ -7,6 +7,7 @@
 #define WITHROTTLE_QUIRK_LNWI    0x00000001
 #define WITHROTTLE_QUIRK_DCCEX   0x00000002
 #define WITHROTTLE_RX_BUFFER_SZ  2048
+#define WITHROTTLE_LINE_BUFFER_SZ 128
 
 class WiThrottleLocRef : public CmdStnLocRef
 {
@@ -33,6 +34,9 @@ class WiThrottle : public CommandStation
     ThrottleState* throttleStates[MAX_THROTTLES];
     bool locomotiveFunctionSetJMRI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
     bool locomotiveFunctionSetLNWI(ThrottleState* tState, uint8_t funcNum, bool funcActive);
+    bool handlePowerUpdate(const char* rxStr);
+    bool handleMultithrottleUpdate(char* rxStr);
+    bool handleFastClockUpdate(const char* rxStr);
     ThrottleState* getThrottleStateForMultiThrottleLetter(uint8_t letter);
     uint8_t debug;
 
@@ -49,6 +53,8 @@ class WiThrottle : public CommandStation
     uint8_t getMultiThrottleLetter(uint8_t mrbusAddr, ThrottleState *tState);
     void releaseMultiThrottleLetter(uint8_t mrbusAddr);
     void processResponse(const uint8_t* rxData, uint32_t rxDataLen);
+    void resetRxBuffer();
+    void consumeRxBuffer();
     bool begin(WiFiClient &cmdStnConnection, uint32_t quirkFlags, uint8_t debugLvl = DBGLVL_INFO);
     bool end();
     bool update();

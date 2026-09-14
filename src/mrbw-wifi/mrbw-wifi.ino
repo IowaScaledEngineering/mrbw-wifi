@@ -120,7 +120,7 @@ void fsSetupAndConfig()
 
 void setup() 
 {
-  Serial.begin();
+  Serial.begin(115200);
   systemState.resetReason = rtc_get_reset_reason(0);
 
   switches.setup();
@@ -238,7 +238,6 @@ bool sendMRBusTimePacket(SystemState& systemState, MRBus& mrbus)
   timePkt.data[8] = 0xFF & (mrbusFTRatio>>8);
   timePkt.data[9] = mrbusFTRatio & 0xFF;
   return mrbus.txPktQueue->push(timePkt);
-  return true;
 }
 
 
@@ -493,7 +492,7 @@ void loop()
           WiFi.disconnect();
           WiFi.mode(WIFI_STA);
           WiFi.setHostname(systemState.hostname);
-          if (0 != strlen(systemState.password))
+          if (0 == strlen(systemState.password))
             WiFi.setMinSecurity(WIFI_AUTH_OPEN);
           else
             WiFi.setMinSecurity(WIFI_AUTH_WPA2_PSK);

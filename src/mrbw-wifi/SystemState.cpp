@@ -74,7 +74,7 @@ bool SystemState::cmdStnDisconnect()
   if (this->isCmdStnConnected && NULL != this->cmdStn)
   {
       this->cmdStn->end();
-      free(this->cmdStn);
+      delete this->cmdStn;
   }
   this->isCmdStnConnected = false;
   this->cmdStn = NULL;
