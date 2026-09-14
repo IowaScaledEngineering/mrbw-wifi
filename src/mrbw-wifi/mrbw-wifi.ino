@@ -122,8 +122,19 @@ void setup()
 {
   Serial.begin();
   systemState.resetReason = rtc_get_reset_reason(0);
+
   switches.setup();
   ws2812Init();
+  Serial.setDebugOutput(true);
+
+  if (psramInit() == false) {
+    Serial.println("PSRAM init failed!");
+  } else if (psramAddToHeap() == false) {
+    Serial.println("PSRAM could not be added to the heap!");
+  } else {
+    Serial.println("PSRAM added to the heap.");
+  }
+
 
   Wire.setPins(PIN_SDA, PIN_SCL);
   Wire.setClock(400000UL);
@@ -164,6 +175,8 @@ void setup()
   WiFi.mode(WIFI_STA);
   WiFi.setHostname(systemState.hostname);
   WiFi.disconnect();
+  WiFi.setMinSecurity(WIFI_AUTH_OPEN);
+
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
 
   esp_task_wdt_reset();
@@ -181,7 +194,7 @@ void drawSplashScreen(SystemState& state)
   display.putstr("Iowa Scaled", 0, 0);
   display.putstr("Engineering", 0, 1);
   display.putstr("MRBW-WIFI  ", 0, 2);
-  snprintf(buffer, sizeof(buffer), "%d.%d.%d %6.6s", MAJOR_VERSION, MINOR_VERSION, DELTA_VERSION, GIT_REV);
+  snprintf(buffer, sizeof(buffer), "%d.%d.%d", MAJOR_VERSION, MINOR_VERSION, DELTA_VERSION);
   display.putstr(buffer, 0, 3);
   
   snprintf(buffer, sizeof(buffer)-1, "%02X%02X", state.macAddr[4], state.macAddr[5]);
@@ -406,6 +419,7 @@ void loop()
         Serial.printf("[SYS]: Iowa Scaled Engineering\n");
         Serial.printf("[SYS]: MRBW-WIFI\n");
         Serial.printf("[SYS]: IDF Ver:  [%s]\n", esp_get_idf_version());
+        Serial.printf("[SYS]: ESP Arduino Ver: [%s]", ESP_ARDUINO_VERSION_STR);
         Serial.printf("[SYS]: MAC Addr: [%02X:%02X:%02X:%02X:%02X:%02X]\n", 
           systemState.macAddr[0], systemState.macAddr[1], systemState.macAddr[2],
           systemState.macAddr[3], systemState.macAddr[4], systemState.macAddr[5]);
@@ -418,9 +432,9 @@ void loop()
       break;
 
     case STATE_MAIN_LOOP:
+
       if (tmrStatusScreenUpdate.test(true))
       {
-
         esp_task_wdt_reset();
 
         // Will only send time if we have a fast time source
@@ -454,7 +468,11 @@ void loop()
         // Send our version and status out every second
         sendMRBusVersionPacket(systemState, mrbus);
       }
+
       mrbus.processSerial();
+
+
+
 
       if (!systemState.isWifiConnected || !systemState.isCmdStnConnected)
       {
@@ -472,20 +490,39 @@ void loop()
         {
           // Try to connect to the network we found
           Serial.printf("[SYS]: Starting connection to [%s] [%s]\n", systemState.ssid, systemState.password);
+          WiFi.disconnect();
+          WiFi.mode(WIFI_STA);
+          WiFi.setHostname(systemState.hostname);
+          if (0 != strlen(systemState.password))
+            WiFi.setMinSecurity(WIFI_AUTH_OPEN);
+          else
+            WiFi.setMinSecurity(WIFI_AUTH_WPA2_PSK);
           WiFi.begin(systemState.ssid, systemState.password);
 
-          // FIXME - put timeout here
-          while(WiFi.status() != WL_CONNECTED)
+          uint32_t timeoutCounter = 300;
+          while(WiFi.status() != WL_CONNECTED && timeoutCounter > 0)
           {
             delay(100);
+            esp_task_wdt_reset();
+            if (0 == timeoutCounter % 10)
+              Serial.printf(".");
+            timeoutCounter--;
           }
-          Serial.printf("[SYS]: Connected to wifi network [%s]\n", systemState.ssid);
-          WiFi.setAutoReconnect(true);
+          Serial.printf("\n");
+          if (0 == timeoutCounter)
+          {
+            Serial.printf("[SYS]: Connection failed to wifi network [%s]\n", systemState.ssid);
+            WiFi.disconnect();
+            return;
+          }
         }
 
         // Did we connect?  If so, change our indication to wifi connected and go back around the loop
         if(WiFi.status() == WL_CONNECTED)
         {
+          Serial.printf("[SYS]: Connected to wifi network [%s]\n", systemState.ssid);
+          WiFi.setAutoReconnect(true);
+
           systemState.localIP = WiFi.localIP();
           systemState.isWifiConnected = true;
           systemState.isCmdStnConnected = false;
@@ -500,6 +537,8 @@ void loop()
         systemState.localIP.fromString("0.0.0.0");
         systemState.isWifiConnected = false;
         systemState.cmdStnDisconnect();
+        WiFi.disconnect();
+        WiFi.setAutoReconnect(false);
 
       }
 
@@ -601,11 +640,6 @@ void loop()
       {
         MRBusPacket pkt;
         mrbus.rxPktQueue->pop(pkt);
-        /*Serial.printf("Pkt [%02x->%02x (%d bytes) ", pkt.src, pkt.dest, pkt.len);
-        for(uint32_t k = 0; k<pkt.len; k++)
-          Serial.printf("%02x ", pkt.data[k]);
-        Serial.printf("]\n");*/
-
         if (pkt.src == systemState.mrbusSrcAddrGet())
         {
           // Ouch, conflicting base station detected
