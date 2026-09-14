@@ -94,7 +94,7 @@ uint8_t debugWordToLevel(const char* debugStr)
   else if (0 == strcmp(debugStr, "info"))
     return DBGLVL_INFO;
   else if (0 == strcmp(debugStr, "debug"))
-    return DBGLVL_WARN;
+    return DBGLVL_DEBUG;
 
   // No valid string?  Turn it all on!
   return DBGLVL_DEBUG;
@@ -458,7 +458,18 @@ bool SystemState::cmdStnIPSetup()
     // Take our IP, make it a.b.c.1 and return it
     
     this->cmdStnIP = (((uint32_t)this->localIP) & 0x00FFFFFF) | 0x01000000;
-    Serial.printf("[SYS]: Trying backup plan of command station [%s]\n", this->cmdStnIP.toString().c_str());
+    if (0 == this->cmdStnPort)
+    {
+      if (CMDSTN_LNWI == this->cmdStnType)
+        this->cmdStnPort = 12090;
+      else if (CMDSTN_ESU == this->cmdStnType)
+        this->cmdStnPort = 15471;
+      else if (CMDSTN_DCCEX == this->cmdStnType)
+        this->cmdStnPort = 2560;
+    }
+
+    Serial.printf("[SYS]: Trying backup plan of command station [%s:%d]\n", this->cmdStnIP.toString().c_str(), this->cmdStnPort);
+
     return true;
   }
 
@@ -481,7 +492,7 @@ bool SystemState::isConflictingBasePresent()
     this->conflictingBase = false;
   }
 
-  return this->conflictingBase;;
+  return this->conflictingBase;
 }
 
 
@@ -581,6 +592,8 @@ bool SystemState::wifiScan()
       break;
     }
   }
+
+  WiFi.scanDelete();
 
   if (strlen(this->ssid))
   {
