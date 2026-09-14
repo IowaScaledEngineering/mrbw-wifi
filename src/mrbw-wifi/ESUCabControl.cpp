@@ -228,12 +228,12 @@ void ESUCabControl::handleEvents()
 
     // If the errCd isn't 0, why did the command station send this?  Regardless, probably should handle it
 
-    if (0 == errCd && 1 == sscanf(beginPtr, "<EVENT %u>", &rObjID))
+    if (0 == errCd && 1 == sscanf(beginPtr, "<EVENT %lu>", &rObjID))
     {
       // Okay, now we have an object ID.  See if it's one we care about
       // Go to the end of the EVENT tag and start at the next character
       if (IS_DBGLVL_DEBUG)
-        Serial.printf("[ESU]: Event for objID=%d\n", rObjID);
+        Serial.printf("[ESU]: Event for objID=%lu\n", rObjID);
 
       ThrottleState* tUpdate = this->findThrottleByObject(rObjID);
       if (NULL != tUpdate || 1 == rObjID)  // It's either a throttle or system state (like power)
@@ -255,22 +255,22 @@ void ESUCabControl::handleEvents()
           uint32_t rFuncVal = 0;
           if (eolPtr > bolPtr) // More than a blank line...
           {
-            if (NULL != tUpdate && 2 == sscanf(bolPtr, "%u dir[%u]", &rObjID, &rDir))
+            if (NULL != tUpdate && 2 == sscanf(bolPtr, "%lu dir[%lu]", &rObjID, &rDir))
             {
               tUpdate->locRevDirection = rDir?true:false;
               if (IS_DBGLVL_INFO)
-                Serial.printf("[ESU]: EVENT: loc=%d objID=%d dir=%d\n", tUpdate->locAddr, rObjID, rDir);
+                Serial.printf("[ESU]: EVENT: loc=%d objID=%lu dir=%lu\n", tUpdate->locAddr, rObjID, rDir);
             }
-            else if (NULL != tUpdate && 2 == sscanf(bolPtr, "%u speed[%u]", &rObjID, &rSpeed))
+            else if (NULL != tUpdate && 2 == sscanf(bolPtr, "%lu speed[%lu]", &rObjID, &rSpeed))
             {
               tUpdate->locSpeed = rSpeed;
               if (IS_DBGLVL_INFO)
-                Serial.printf("[ESU]: EVENT: loc=%d objID=%d speed=%d\n", tUpdate->locAddr, rObjID, rSpeed);
+                Serial.printf("[ESU]: EVENT: loc=%d objID=%lu speed=%lu\n", tUpdate->locAddr, rObjID, rSpeed);
             }
-            else if (NULL != tUpdate && 3 == sscanf(bolPtr, "%u func[%u,%u]", &rObjID, &rFuncNum, &rFuncVal))
+            else if (NULL != tUpdate && 3 == sscanf(bolPtr, "%lu func[%lu,%lu]", &rObjID, &rFuncNum, &rFuncVal))
             {
               if (IS_DBGLVL_INFO)
-                Serial.printf("[ESU]: EVENT: loc=%d objID = %d, f[%u]=%u\n", tUpdate->locAddr, rObjID, rFuncNum, rFuncVal);
+                Serial.printf("[ESU]: EVENT: loc=%d objID = %lu, f[%lu]=%lu\n", tUpdate->locAddr, rObjID, rFuncNum, rFuncVal);
               if (rFuncNum < MAX_FUNCTIONS)
                 tUpdate->locFunctions[rFuncNum] = rFuncVal?true:false;
             }
@@ -325,7 +325,7 @@ void ESUCabControl::rxtx(const char* cmdStr)
 
     while(written < bytesToWrite)
       written += this->cmdStnConnection->write(cmdStr + written, bytesToWrite-written);
-    this->cmdStnConnection->flush();
+    this->cmdStnConnection->clear();
 
     this->keepaliveTimer.reset();
     if (IS_DBGLVL_DEBUG)
@@ -458,7 +458,7 @@ int32_t ESUCabControl::queryLocomotiveObjectGet(uint16_t locAddr)
   if (responseLen > 0 && NULL != responseStr && 0 == errCd)
   {
     if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: locomotiveObjectGet: Got response, errCode=%d\n", errCd);
+      Serial.printf("[ESU]: locomotiveObjectGet: Got response, errCode=%ld\n", errCd);
     char* bolPtr = responseStr;
     char* eolPtr = bolPtr;
 
@@ -474,7 +474,7 @@ int32_t ESUCabControl::queryLocomotiveObjectGet(uint16_t locAddr)
         // Parse this line, see if it's the locomotive we're looking for
         //  Valid responses will be in the form "n addr[n]"
 
-        if (2 == sscanf(bolPtr, "%u addr[%u]", &rObjID, &rLocAddr))
+        if (2 == sscanf(bolPtr, "%lu addr[%lu]", &rObjID, &rLocAddr))
         {
           // Line parsed with right number of arguments
           if (rLocAddr == locAddr)
@@ -500,9 +500,9 @@ int32_t ESUCabControl::queryLocomotiveObjectGet(uint16_t locAddr)
     if (-2 == objID && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectGet: TIMED OUT\n");
     else if (-1 == objID && IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryLocomotiveObjectGet: Loco [%d] not found\n", locAddr);
+      Serial.printf("[ESU]: queryLocomotiveObjectGet: Loco [%u] not found\n", locAddr);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryLocomotiveObjectGet: Loco [%d] is objID [%d]\n", locAddr, objID);
+      Serial.printf("[ESU]: queryLocomotiveObjectGet: Loco [%u] is objID [%ld]\n", locAddr, objID);
   }
   return objID;
 }
@@ -516,15 +516,15 @@ int32_t ESUCabControl::queryAddLocomotiveObject(uint16_t locAddr)
   int32_t errCd = -1;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryAddLocomotiveObject: Add loco [%d]\n", locAddr);
+    Serial.printf("[ESU]: queryAddLocomotiveObject: Add loco [%u]\n", locAddr);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "create(10, addr[%d], append)", locAddr);
+  snprintf(queryStr, sizeof(queryStr)-1, "create(10, addr[%u], append)", locAddr);
   responseLen = this->query(queryStr, &responseStr, &errCd);
 
   if (responseLen > 0 && NULL != responseStr && 0 == errCd)
   {
     if (IS_DBGLVL_DEBUG)
-      Serial.printf("[ESU]: queryAddLocomotiveObject: Got response, errCd = %d\n", errCd);
+      Serial.printf("[ESU]: queryAddLocomotiveObject: Got response, errCd = %ld\n", errCd);
     char* bolPtr = responseStr;
     char* eolPtr;
     while (*bolPtr != 0 && NULL != (eolPtr = strchr(bolPtr, '\n')) && eolPtr < responseStr + responseLen)
@@ -536,7 +536,7 @@ int32_t ESUCabControl::queryAddLocomotiveObject(uint16_t locAddr)
         *eolPtr = 0; // Null terminate in place, don't waste a copy
         // Parse this line, see if it's the locomotive we're looking for
         //  Valid responses will be in the form "10 id[n]"
-        if (1 == sscanf(bolPtr, "10 id[%u]", &rObjID))
+        if (1 == sscanf(bolPtr, "10 id[%lu]", &rObjID))
         {
           // Line parsed with correct number of arguments
           //Serial.printf("ESU queryAddLocomotiveObject: rObjID=%u\n", rObjID);
@@ -556,9 +556,9 @@ int32_t ESUCabControl::queryAddLocomotiveObject(uint16_t locAddr)
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryAddLocomotiveObject: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryAddLocomotiveObject: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryAddLocomotiveObject: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryAddLocomotiveObject: Loco [%d] is objID [%d]\n", locAddr, objID);
+      Serial.printf("[ESU]: queryAddLocomotiveObject: Loco [%d] is objID [%ld]\n", locAddr, objID);
   }
 
   return objID;
@@ -573,9 +573,9 @@ bool ESUCabControl::queryLocomotiveObjectSpeedDirGet(int32_t objID, uint8_t* spe
   bool retval = false;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryLocomotiveObjectSpeedDirGet: objID[%d]\n", objID);
+    Serial.printf("[ESU]: queryLocomotiveObjectSpeedDirGet: objID[%ld]\n", objID);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "get(%d, speed, dir)", objID);
+  snprintf(queryStr, sizeof(queryStr)-1, "get(%ld, speed, dir)", objID);
   responseLen = this->query(queryStr, &responseStr, &errCd);
 
   if (responseLen > 0 && NULL != responseStr && 0 == errCd)
@@ -592,11 +592,11 @@ bool ESUCabControl::queryLocomotiveObjectSpeedDirGet(int32_t objID, uint8_t* spe
         uint32_t rDir= 0;
 
         *eolPtr = 0; // Null terminate in place, don't waste a copy
-        if (2 == sscanf(bolPtr, "%u speed[%u]", &rObjID, &rSpeed) && rObjID == objID)
+        if (2 == sscanf(bolPtr, "%lu speed[%lu]", &rObjID, &rSpeed) && rObjID == objID)
         {
           *speed = rSpeed;
         }
-        else if (2 == sscanf(bolPtr, "%u dir[%u]", &rObjID, &rDir) && rObjID == objID)
+        else if (2 == sscanf(bolPtr, "%lu dir[%lu]", &rObjID, &rDir) && rObjID == objID)
         {
           *isReverse = rDir?true:false;
         }
@@ -613,9 +613,9 @@ bool ESUCabControl::queryLocomotiveObjectSpeedDirGet(int32_t objID, uint8_t* spe
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectSpeedDirGet: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryLocomotiveObjectSpeedDirGet: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryLocomotiveObjectSpeedDirGet: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryLocomotiveObjectSpeedDirGet: objID[%d] speed=%d, dir=%c\n", objID, *speed, *isReverse?'R':'F');
+      Serial.printf("[ESU]: queryLocomotiveObjectSpeedDirGet: objID[%ld] speed=%d, dir=%c\n", objID, *speed, *isReverse?'R':'F');
   }
   return retval;
 }
@@ -632,21 +632,21 @@ bool ESUCabControl::queryLocomotiveObjectAllFunctionsGet(int32_t objID, bool *lo
   bool retval = false;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: objID[%d]\n", objID);
+    Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: objID[%ld]\n", objID);
 
   for(int32_t queryPhase=0; queryPhase < 3; queryPhase++)
   {
     switch(queryPhase)
     {
       case 0:
-        snprintf(queryStr, sizeof(queryStr)-1, "get(%d, func[0], func[1], func[2], func[3], func[4], func[5], func[6], func[7], func[8], func[9])", objID);
+        snprintf(queryStr, sizeof(queryStr)-1, "get(%ld, func[0], func[1], func[2], func[3], func[4], func[5], func[6], func[7], func[8], func[9])", objID);
         break;
       case 1:
-        snprintf(queryStr, sizeof(queryStr)-1, "get(%d, func[10], func[11], func[12], func[13], func[14], func[15], func[16], func[17], func[18], func[19])", objID);
+        snprintf(queryStr, sizeof(queryStr)-1, "get(%ld, func[10], func[11], func[12], func[13], func[14], func[15], func[16], func[17], func[18], func[19])", objID);
         break;
 
       case 2:
-        snprintf(queryStr, sizeof(queryStr)-1, "get(%d, func[20], func[21], func[22], func[23], func[24], func[25], func[26], func[27], func[28])", objID);
+        snprintf(queryStr, sizeof(queryStr)-1, "get(%ld, func[20], func[21], func[22], func[23], func[24], func[25], func[26], func[27], func[28])", objID);
         break;
 
       default:
@@ -659,7 +659,7 @@ bool ESUCabControl::queryLocomotiveObjectAllFunctionsGet(int32_t objID, bool *lo
     if (responseLen > 0 && NULL != responseStr && 0 == errCd)
     {
       if (IS_DBGLVL_DEBUG)
-        Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: Got response, errCd = %d\n", errCd);
+        Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: Got response, errCd = %ld\n", errCd);
       char* bolPtr = responseStr;
       char* eolPtr;
       while (*bolPtr != 0 && NULL != (eolPtr = strchr(bolPtr, '\n')) && eolPtr < responseStr + responseLen)
@@ -671,7 +671,7 @@ bool ESUCabControl::queryLocomotiveObjectAllFunctionsGet(int32_t objID, bool *lo
           uint32_t rFuncVal= 0;
 
           *eolPtr = 0; // Null terminate in place, don't waste a copy
-          if (3 == sscanf(bolPtr, "%u func[%u,%u]", &rObjID, &rFuncNum, &rFuncVal))
+          if (3 == sscanf(bolPtr, "%lu func[%lu,%lu]", &rObjID, &rFuncNum, &rFuncVal))
           {
             if (rObjID == objID && rFuncNum < MAX_FUNCTIONS)
             {
@@ -691,7 +691,7 @@ bool ESUCabControl::queryLocomotiveObjectAllFunctionsGet(int32_t objID, bool *lo
       if (-1 == errCd && IS_DBGLVL_ERR)
         Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: TIMED OUT\n");
       else if (0 != errCd && IS_DBGLVL_ERR)
-        Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: QUERY ERROR  [%d]\n", errCd);
+        Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: QUERY ERROR  [%ld]\n", errCd);
       else if (IS_DBGLVL_INFO)
         Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: SUCCESS\n");
     }
@@ -709,15 +709,15 @@ bool ESUCabControl::queryLocomotiveObjectFunctionGet(int32_t objID, uint8_t func
   bool retval = false;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: objID[%d] f[%d]\n", objID, funcNum);
+    Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: objID[%ld] f[%u]\n", objID, funcNum);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "get(%d, func[%d])", objID, funcNum);
+  snprintf(queryStr, sizeof(queryStr)-1, "get(%ld, func[%u])", objID, funcNum);
   responseLen = this->query(queryStr, &responseStr, &errCd);
 
   if (responseLen > 0 && NULL != responseStr && 0 == errCd)
   {
     if (IS_DBGLVL_DEBUG)
-      Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: Got response, errCd = %d\n", errCd);
+      Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: Got response, errCd = %ld\n", errCd);
     char* bolPtr = responseStr;
     char* eolPtr;
     while (*bolPtr != 0 && NULL != (eolPtr = strchr(bolPtr, '\n')) && eolPtr < responseStr + responseLen)
@@ -729,7 +729,7 @@ bool ESUCabControl::queryLocomotiveObjectFunctionGet(int32_t objID, uint8_t func
         uint32_t rFuncVal= 0;
 
         *eolPtr = 0; // Null terminate in place, don't waste a copy
-        if (3 == sscanf(bolPtr, "%u func[%u,%u]", &rObjID, &rFuncNum, &rFuncVal))
+        if (3 == sscanf(bolPtr, "%lu func[%lu,%lu]", &rObjID, &rFuncNum, &rFuncVal))
         {
           //Serial.printf("ESU queryLocomotiveObjectFunctionGet: rObjID=%u, rFuncNum=%u, rFuncVal=%u\n", rObjID, rFuncNum, rFuncVal);
           
@@ -752,9 +752,9 @@ bool ESUCabControl::queryLocomotiveObjectFunctionGet(int32_t objID, uint8_t func
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: objID[%d] f[%d]=%d\n", objID, funcNum, retval?1:0);
+      Serial.printf("[ESU]: queryLocomotiveObjectFunctionGet: objID[%ld] f[%d]=%d\n", objID, funcNum, retval?1:0);
   }
   return retval;
 }
@@ -804,7 +804,7 @@ int32_t ESUCabControl::queryTrackPowerState()
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryTrackPowerState: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryTrackPowerState: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryTrackPowerState: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
       Serial.printf("[ESU]: queryTrackPowerState: %s\n", retval?"ON":"OFF");
   }
@@ -819,9 +819,9 @@ bool ESUCabControl::queryAcquireLocomotiveObject(int32_t objID)
   int32_t errCd = -1;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryAcquireLocomotiveObject: objID[%d]\n", objID);
+    Serial.printf("[ESU]: queryAcquireLocomotiveObject: objID[%ld]\n", objID);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "request(%d, view, control, force)", objID);
+  snprintf(queryStr, sizeof(queryStr)-1, "request(%ld, view, control, force)", objID);
   this->query(queryStr, NULL, &errCd);
 
   if (this->debug)
@@ -829,9 +829,9 @@ bool ESUCabControl::queryAcquireLocomotiveObject(int32_t objID)
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryAcquireLocomotiveObject: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryAcquireLocomotiveObject: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryAcquireLocomotiveObject: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryAcquireLocomotiveObject: objID[%d] acquired control\n", objID);
+      Serial.printf("[ESU]: queryAcquireLocomotiveObject: objID[%ld] acquired control\n", objID);
   }
 
   if (0 == errCd)
@@ -847,11 +847,11 @@ bool ESUCabControl::queryLocomotiveObjectSpeedSet(int32_t objID, uint8_t speed, 
   int32_t errCd = -1;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryLocomotiveObjectSpeedSet: objID[%d] speed[%c:%d]\n", objID, isReverse?'R':'F', speed);
+    Serial.printf("[ESU]: queryLocomotiveObjectSpeedSet: objID[%ld] speed[%c:%u]\n", objID, isReverse?'R':'F', speed);
 
   speed = MIN(126, speed);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "set(%d, speed[%d], dir[%d])", objID, speed, isReverse?1:0);
+  snprintf(queryStr, sizeof(queryStr)-1, "set(%ld, speed[%d], dir[%d])", objID, speed, isReverse?1:0);
   this->query(queryStr, NULL, &errCd);
 
   if (this->debug)
@@ -859,9 +859,9 @@ bool ESUCabControl::queryLocomotiveObjectSpeedSet(int32_t objID, uint8_t speed, 
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectSpeedSet: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryLocomotiveObjectSpeedSet: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryLocomotiveObjectSpeedSet: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryLocomotiveObjectSpeedSet: objID[%d] speed set\n", objID);
+      Serial.printf("[ESU]: queryLocomotiveObjectSpeedSet: objID[%ld] speed set\n", objID);
   }
   if (0 == errCd)
     return true;
@@ -875,11 +875,11 @@ bool ESUCabControl::queryLocomotiveObjectFunctionSet(int32_t objID, uint8_t func
   int32_t errCd = -1;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: objID[%d] f[%d]=%d\n", objID, funcNum, funcVal?1:0);
+    Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: objID[%ld] f[%d]=%d\n", objID, funcNum, funcVal?1:0);
 
   funcNum = MIN(MAX_FUNCTIONS, funcNum);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "set(%d, func[%d,%d])", objID, funcNum, funcVal?1:0);
+  snprintf(queryStr, sizeof(queryStr)-1, "set(%ld, func[%u,%d])", objID, funcNum, funcVal?1:0);
   this->query(queryStr, NULL, &errCd);
 
   if (this->debug)
@@ -887,9 +887,9 @@ bool ESUCabControl::queryLocomotiveObjectFunctionSet(int32_t objID, uint8_t func
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: objID[%d] f[%d] set success\n", objID, funcNum);
+      Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: objID[%ld] f[%d] set success\n", objID, funcNum);
   }
 
   if (0 == errCd)
@@ -905,9 +905,9 @@ bool ESUCabControl::queryLocomotiveObjectEmergencyStop(int32_t objID)
   int32_t errCd = -1;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryLocomotiveObjectEmergencyStop: objID[%d] ESTOP\n", objID);
+    Serial.printf("[ESU]: queryLocomotiveObjectEmergencyStop: objID[%ld] ESTOP\n", objID);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "set(%d, stop)", objID);
+  snprintf(queryStr, sizeof(queryStr)-1, "set(%ld, stop)", objID);
   this->query(queryStr, NULL, &errCd);
 
   if (this->debug)
@@ -915,9 +915,9 @@ bool ESUCabControl::queryLocomotiveObjectEmergencyStop(int32_t objID)
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectEmergencyStop: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryLocomotiveObjectEmergencyStop: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryLocomotiveObjectEmergencyStop: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryLocomotiveObjectEmergencyStop: objID[%d] ESTOP success\n", objID);
+      Serial.printf("[ESU]: queryLocomotiveObjectEmergencyStop: objID[%ld] ESTOP success\n", objID);
   }
 
   if (0 == errCd)
@@ -933,9 +933,9 @@ bool ESUCabControl::queryReleaseLocomotiveObject(int32_t objID)
   int32_t errCd = -1;
 
   if (IS_DBGLVL_DEBUG)
-    Serial.printf("[ESU]: queryReleaseLocomotiveObject: objID[%d] release\n", objID);
+    Serial.printf("[ESU]: queryReleaseLocomotiveObject: objID[%ld] release\n", objID);
 
-  snprintf(queryStr, sizeof(queryStr)-1, "release(%d, view, control)", objID);
+  snprintf(queryStr, sizeof(queryStr)-1, "release(%ld, view, control)", objID);
   this->query(queryStr, NULL, &errCd);
 
   if (this->debug)
@@ -943,9 +943,9 @@ bool ESUCabControl::queryReleaseLocomotiveObject(int32_t objID)
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryReleaseLocomotiveObject: TIMED OUT\n");
     else if (0 != errCd && IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: queryReleaseLocomotiveObject: QUERY ERROR  [%d]\n", errCd);
+      Serial.printf("[ESU]: queryReleaseLocomotiveObject: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: queryReleaseLocomotiveObject: objID[%d] release success\n", objID);
+      Serial.printf("[ESU]: queryReleaseLocomotiveObject: objID[%ld] release success\n", objID);
   }
 
   if (0 == errCd)
@@ -957,7 +957,7 @@ bool ESUCabControl::queryReleaseLocomotiveObject(int32_t objID)
 bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bool isLongAddr, uint8_t mrbusAddr)
 {
   if (IS_DBGLVL_INFO)
-    Serial.printf("[ESU]: locomotiveObjectGet(%c%04d)\n", isLongAddr?'L':'S', addr);
+    Serial.printf("[ESU]: locomotiveObjectGet(%c%04u)\n", isLongAddr?'L':'S', addr);
 
   if (NULL != tState->locCmdStnRef)
   {
@@ -974,14 +974,14 @@ bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bo
   if (-2 == objID)
   {
     if (IS_DBGLVL_ERR)
-      Serial.printf("[ESU]: locomotiveObjectGet(%c%04d) object query timeout\n", isLongAddr?'L':'S', addr);
+      Serial.printf("[ESU]: locomotiveObjectGet(%c%04u) object query timeout\n", isLongAddr?'L':'S', addr);
     return false;  // We didn't acquire it because our transaction timed out.  Don't blindly add unless we have a good transaction
   }
   // Didn't find it?
   else if (-1 == objID)
   {
     if (IS_DBGLVL_WARN)
-      Serial.printf("[ESU]: locomotiveObjectGet(%c%04d) loc not found, adding it\n", isLongAddr?'L':'S', addr);
+      Serial.printf("[ESU]: locomotiveObjectGet(%c%04u) loc not found, adding it\n", isLongAddr?'L':'S', addr);
     objID = this->queryAddLocomotiveObject(addr);
 
   }
@@ -989,7 +989,7 @@ bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bo
     return false;  // Nothing else we can do here except fail!*/
 
   if (IS_DBGLVL_INFO)
-    Serial.printf("[ESU]: locomotiveObjectGet(%c:%d) at objID[%d]\n", isLongAddr?'L':'S', addr, objID);
+    Serial.printf("[ESU]: locomotiveObjectGet(%c:%u) at objID[%ld]\n", isLongAddr?'L':'S', addr, objID);
 
   // Put the throttle state reference in the throttle states array so events can update it
   uint8_t offset = mrbusAddr - MRBUS_THROTTLE_BASE_ADDR;
@@ -1019,7 +1019,7 @@ bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bo
   tState->locFunctionsGood = true;
 
   if (IS_DBGLVL_INFO)
-    Serial.printf("[ESU]: locomotiveObjectGet(%c%04d) success\n", isLongAddr?'L':'S', addr);
+    Serial.printf("[ESU]: locomotiveObjectGet(%c%04u) success\n", isLongAddr?'L':'S', addr);
 
   return true;
 }
@@ -1031,7 +1031,7 @@ bool ESUCabControl::locomotiveEmergencyStop(ThrottleState* tState)
     return false;
 
   if (IS_DBGLVL_INFO)
-    Serial.printf("[ESU]: locomotiveEmergencyStop(%c%04d/%d)\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID);
+    Serial.printf("[ESU]: locomotiveEmergencyStop(%c%04u/%ld)\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID);
 
 
   bool success = queryLocomotiveObjectEmergencyStop(esuLocRef->objID);
@@ -1050,7 +1050,7 @@ bool ESUCabControl::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, boo
     return false;
 
   if (IS_DBGLVL_INFO)
-    Serial.printf("[ESU]: locomotiveSpeedSet(%c%04d/%d) speed[%c:%d]\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID, isReverse?'R':'F', speed);
+    Serial.printf("[ESU]: locomotiveSpeedSet(%c%04u/%ld) speed[%c:%d]\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID, isReverse?'R':'F', speed);
 
   bool success = this->queryLocomotiveObjectSpeedSet(esuLocRef->objID, speed, isReverse);
   if (success)
@@ -1070,7 +1070,7 @@ bool ESUCabControl::locomotiveFunctionsGet(ThrottleState* tState, bool functionS
     return false;
 
   if (IS_DBGLVL_INFO)
-    Serial.printf("[ESU]: locomotiveFunctionsGet(%c%04d/%d)\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID);
+    Serial.printf("[ESU]: locomotiveFunctionsGet(%c%04u/%ld)\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID);
 
 
   this->queryLocomotiveObjectAllFunctionsGet(esuLocRef->objID, functionStates);
@@ -1084,7 +1084,7 @@ bool ESUCabControl::locomotiveFunctionSet(ThrottleState* tState, uint8_t funcNum
     return false;
 
   if (IS_DBGLVL_INFO)
-    Serial.printf("[ESU]: locomotiveFunctionSet(%c%04d/%d) F%02d = %d\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID, funcNum, funcActive?1:0);
+    Serial.printf("[ESU]: locomotiveFunctionSet(%c%04u/%ld) F%02d = %d\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID, funcNum, funcActive?1:0);
 
   bool success = this->queryLocomotiveObjectFunctionSet(esuLocRef->objID, funcNum, funcActive);
   if (success)
@@ -1099,7 +1099,7 @@ bool ESUCabControl::locomotiveDisconnect(ThrottleState* tState)
     ESUCCLocRef* esuLocRef = (ESUCCLocRef*)tState->locCmdStnRef;
 
     if (IS_DBGLVL_INFO)
-      Serial.printf("[ESU]: locomotiveDisconnect(%c%04d/%d)\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID);
+      Serial.printf("[ESU]: locomotiveDisconnect(%c%04u/%ld)\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID);
 
     uint8_t offset = esuLocRef->mrbusAddr - MRBUS_THROTTLE_BASE_ADDR;
     if (offset < MAX_THROTTLES)  // Eh, now what?
