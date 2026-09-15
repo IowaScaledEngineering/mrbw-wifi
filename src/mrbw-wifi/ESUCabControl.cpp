@@ -163,7 +163,7 @@ ThrottleState* ESUCabControl::findThrottleByObject(int32_t rObjID)
     if (NULL != this->throttleStates[i])
     {
       ESUCCLocRef* esuLocRef = (ESUCCLocRef*)(this->throttleStates[i]->locCmdStnRef);
-      if (esuLocRef->objID == rObjID)
+      if (NULL != esuLocRef && esuLocRef->objID == rObjID)
         return this->throttleStates[i];
     }
   }
@@ -238,16 +238,20 @@ void ESUCabControl::handleEvents()
       ThrottleState* tUpdate = this->findThrottleByObject(rObjID);
       if (NULL != tUpdate || 1 == rObjID)  // It's either a throttle or system state (like power)
       {
-        responseStr = strchr(beginPtr, '>') + 1;
-        while (!isprint(*responseStr) || isspace(*responseStr))
-          responseStr++; // And increment past the first CR/LF
-        
-        uint32_t responseLen = endPtr - responseStr;
+        const char* eventEndPtr = strchr(beginPtr, '>');
+        if (NULL == eventEndPtr || eventEndPtr >= endPtr)
+          break;
 
+        responseStr = eventEndPtr + 1;
+        while (responseStr < endPtr && (!isprint((unsigned char)*responseStr) || isspace((unsigned char)*responseStr)))
+          responseStr++; // And increment past the first CR/LF
+
+        uint32_t responseLen = responseStr >= endPtr ? 0 : endPtr - responseStr;
+        
         // responseStr now should be the start of things to parse
         const char* bolPtr = responseStr;
         const char* eolPtr = bolPtr;
-        while (*bolPtr != 0 && NULL != (eolPtr = strchr(bolPtr, '\n')) && eolPtr < responseStr + responseLen)
+        while (bolPtr < responseStr + responseLen && NULL != (eolPtr = (const char*)memchr(bolPtr, '\n', responseStr + responseLen - bolPtr)))
         {
           uint32_t rDir = 2;
           uint32_t rSpeed = 0;
@@ -293,9 +297,12 @@ void ESUCabControl::handleEvents()
 
     }
 
-    // Now, remove the whole event from rxbuffer
-    memmove((char*)beginPtr, endEndPtr+1, this->rxBufferUsed - (endEndPtr - beginPtr));
-    this->rxBufferUsed -= endEndPtr - beginPtr;
+    // Now, remove the whole event from rxbuffer, including the closing '>'.
+    uint32_t eventOffset = beginPtr - (const char*)this->rxBuffer;
+    uint32_t eventLength = (endEndPtr - beginPtr) + 1;
+    uint32_t remainingLength = this->rxBufferUsed - eventOffset - eventLength;
+    memmove(this->rxBuffer + eventOffset, endEndPtr + 1, remainingLength);
+    this->rxBufferUsed -= eventLength;
     this->rxBuffer[this->rxBufferUsed] = 0;
   }
 
@@ -324,7 +331,12 @@ void ESUCabControl::rxtx(const char* cmdStr)
     int32_t written = 0;
 
     while(written < bytesToWrite)
-      written += this->cmdStnConnection->write(cmdStr + written, bytesToWrite-written);
+    {
+      size_t bytesWritten = this->cmdStnConnection->write(cmdStr + written, bytesToWrite - written);
+      if (0 == bytesWritten)
+        break;
+      written += bytesWritten;
+    }
     this->cmdStnConnection->clear();
 
     this->keepaliveTimer.reset();
@@ -341,7 +353,7 @@ void ESUCabControl::rxtx(const char* cmdStr)
   if (available <= 0)
     return;
 
-  uint32_t bytesRead = this->cmdStnConnection->readBytes(this->rxBuffer + this->rxBufferUsed, MIN(available, ESUCC_RX_BUFFER_SZ - this->rxBufferUsed - 1));
+  uint32_t bytesRead = this->cmdStnConnection->read(this->rxBuffer + this->rxBufferUsed, MIN(available, ESUCC_RX_BUFFER_SZ - this->rxBufferUsed - 1));
   this->rxBufferUsed += bytesRead;
   this->rxBuffer[this->rxBufferUsed] = 0; // Null terminate it.  This shouldn't ever be in the protocol
   if (IS_DBGLVL_DEBUG && 0 != bytesRead)
@@ -380,6 +392,8 @@ int32_t ESUCabControl::query(const char* queryStr, char** replyBuffer, int32_t* 
   while(!queryTimeout.test(false) && NULL == endEndPtr)
   {
     this->rxtx();
+
+    yield();
 
     if (NULL == beginPtr)
       beginPtr = strstr((char*)this->rxBuffer, replyBeginStr);
@@ -594,10 +608,12 @@ bool ESUCabControl::queryLocomotiveObjectSpeedDirGet(int32_t objID, uint8_t* spe
         if (2 == sscanf(bolPtr, "%lu speed[%lu]", &rObjID, &rSpeed) && rObjID == objID)
         {
           *speed = rSpeed;
+          retval = true;
         }
         else if (2 == sscanf(bolPtr, "%lu dir[%lu]", &rObjID, &rDir) && rObjID == objID)
         {
           *isReverse = rDir?true:false;
+          retval = true;
         }
       }
       bolPtr = eolPtr+1;
@@ -628,7 +644,10 @@ bool ESUCabControl::queryLocomotiveObjectAllFunctionsGet(int32_t objID, bool *lo
   char* responseStr = NULL;
   int32_t responseLen = 0;
   int32_t errCd = -1;
-  bool retval = false;
+  bool retval = true;
+
+  if (NULL == locFunctions)
+    return false;
 
   if (IS_DBGLVL_DEBUG)
     Serial.printf("[ESU]: queryLocomotiveObjectAllFunctionsGet: objID[%ld]\n", objID);
@@ -876,7 +895,8 @@ bool ESUCabControl::queryLocomotiveObjectFunctionSet(int32_t objID, uint8_t func
   if (IS_DBGLVL_DEBUG)
     Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: objID[%ld] f[%d]=%d\n", objID, funcNum, funcVal?1:0);
 
-  funcNum = MIN(MAX_FUNCTIONS, funcNum);
+  if (funcNum >= MAX_FUNCTIONS)
+    return false;
   snprintf(queryStr, sizeof(queryStr)-1, "set(%ld, func[%u,%d])", objID, funcNum, funcVal?1:0);
   this->query(queryStr, NULL, &errCd);
 
@@ -964,7 +984,7 @@ bool ESUCabControl::locomotiveObjectGet(ThrottleState* tState, uint16_t addr, bo
 
   if (NULL != tState->locCmdStnRef)
   {
-    free(tState->locCmdStnRef);
+    delete (ESUCCLocRef*)tState->locCmdStnRef;
     tState->locCmdStnRef = NULL;
   }
 
@@ -1043,7 +1063,7 @@ bool ESUCabControl::locomotiveEmergencyStop(ThrottleState* tState)
     tState->locSpeed = 0;
     tState->locEStop = true;
   }
-  return true;
+  return success;
 }
 
 bool ESUCabControl::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, bool isReverse)
@@ -1063,7 +1083,7 @@ bool ESUCabControl::locomotiveSpeedSet(ThrottleState* tState, uint8_t speed, boo
     tState->locRevDirection = isReverse;
   }
 
-  return true;
+  return success;
 }
 
 bool ESUCabControl::locomotiveFunctionsGet(ThrottleState* tState, bool functionStates[])
@@ -1076,14 +1096,16 @@ bool ESUCabControl::locomotiveFunctionsGet(ThrottleState* tState, bool functionS
     Serial.printf("[ESU]: locomotiveFunctionsGet(%c%04u/%ld)\n", esuLocRef->isLongAddr?'L':'S', esuLocRef->locAddr, esuLocRef->objID);
 
 
-  this->queryLocomotiveObjectAllFunctionsGet(esuLocRef->objID, functionStates);
-  return true;
+  return this->queryLocomotiveObjectAllFunctionsGet(esuLocRef->objID, functionStates);
 }
 
 bool ESUCabControl::locomotiveFunctionSet(ThrottleState* tState, uint8_t funcNum, bool funcActive)
 {
   ESUCCLocRef* esuLocRef = (ESUCCLocRef*)tState->locCmdStnRef;
   if (NULL == esuLocRef)
+    return false;
+
+  if (funcNum >= MAX_FUNCTIONS)
     return false;
 
   if (IS_DBGLVL_INFO)
