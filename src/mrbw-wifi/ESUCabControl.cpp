@@ -415,7 +415,6 @@ int32_t ESUCabControl::query(const char* queryStr, char** replyBuffer, int32_t* 
       *replyBuffer = (char*)calloc(responseLen+1, 1);
       memcpy(*replyBuffer, beginPtr, responseLen);
     }
-//    Serial.printf("Got response [%*.*s]\n", endPtr - (beginPtr+queryLen), endPtr - (beginPtr+queryLen), beginPtr+queryLen);
 
     if (NULL != errCd)
       *errCd = atoi(endPtr + 5); // Skip over "<END " and get the numeric error code
@@ -878,7 +877,6 @@ bool ESUCabControl::queryLocomotiveObjectFunctionSet(int32_t objID, uint8_t func
     Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: objID[%ld] f[%d]=%d\n", objID, funcNum, funcVal?1:0);
 
   funcNum = MIN(MAX_FUNCTIONS, funcNum);
-
   snprintf(queryStr, sizeof(queryStr)-1, "set(%ld, func[%u,%d])", objID, funcNum, funcVal?1:0);
   this->query(queryStr, NULL, &errCd);
 
@@ -886,11 +884,16 @@ bool ESUCabControl::queryLocomotiveObjectFunctionSet(int32_t objID, uint8_t func
   {
     if (-1 == errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: TIMED OUT\n");
+    else if (22 == errCd && IS_DBGLVL_ERR)
+      Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: ERROR 22 - Function %d not enabled\n", funcNum);
     else if (0 != errCd && IS_DBGLVL_ERR)
       Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: QUERY ERROR  [%ld]\n", errCd);
     else if (IS_DBGLVL_INFO)
       Serial.printf("[ESU]: queryLocomotiveObjectFunctionSet: objID[%ld] f[%d] set success\n", objID, funcNum);
   }
+
+  // Note - this returns 22 if the function is not enabled in the ESU roster
+  //  I can't seem to find the command to tell it that a not enabled functio now exists
 
   if (0 == errCd)
     return true;
