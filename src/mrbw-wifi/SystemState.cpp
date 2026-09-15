@@ -6,6 +6,7 @@
 
 SystemState::SystemState()
 {
+  this->activeConfigNum = -1;
   this->loopCnt = 0;
   this->baseAddress = 0;
   this->activeThrottles = 0;
@@ -20,7 +21,7 @@ SystemState::SystemState()
   this->conflictingBase = false;
   this->ipDisplayLine = DISPLAY_IP_LOCAL;
   this->fcSource = FC_SOURCE_OFF;
-  this->debugLvlSystem = DBGLVL_INFO;
+  this->debug = DBGLVL_INFO;
   this->debugLvlMRBus = DBGLVL_INFO;
   this->debugLvlCommandStation = DBGLVL_INFO;
 
@@ -362,7 +363,7 @@ bool SystemState::configRead()
 
   // Set the global (non-per-config) configuration values
   this->debugLvlMRBus = this->configs[0].debugLvlMRBus;
-  this->debugLvlSystem = this->configs[0].debugLvlSystem;
+  this->debug = this->configs[0].debugLvlSystem;
   this->debugLvlCommandStation = this->configs[0].debugLvlCommandStation;
   return true;
 }
@@ -680,22 +681,40 @@ bool SystemState::wifiScan()
   memset(this->password, 0, sizeof(this->password));
   this->cmdStnPort = 0;
   this->cmdStnIP.fromString("0.0.0.0");
+  this->activeConfigNum = -1;
+  uint8_t configNum = 0;
 
-  for (int n=0; n<totalNetworks; n++)
+  for (const auto& config : this->configs) 
   {
-    String ssid;
-    uint8_t auth;
-    int32_t rssi;
-    uint8_t* bssid;
-    int32_t channel;
+    bool match = false;
+    configNum++;
 
-    WiFi.getNetworkInfo(n, ssid, auth, rssi, bssid, channel);
-    // Let's look through these networks and see if we find anything meeting our needs
-
-    for (const auto& config : this->configs) 
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[SYS]: Config [%u] ", configNum);
+      
+    if (!config.isUsed)
     {
-      if (!config.isUsed)
-        continue;
+      if (IS_DBGLVL_INFO)
+        Serial.printf("unused\n");
+      continue;
+    }
+
+    if (IS_DBGLVL_INFO)
+      Serial.printf("ssid [%s]/[%s] type [%d]\n", config.ssid.c_str(), config.password.c_str(), config.cmdStnType);
+
+    for (int n=0; n<totalNetworks; n++)
+    {
+      String ssid;
+      uint8_t auth;
+      int32_t rssi;
+      uint8_t* bssid;
+      int32_t channel;
+
+      WiFi.getNetworkInfo(n, ssid, auth, rssi, bssid, channel);
+      // Let's look through these networks and see if we find anything meeting our needs
+
+      if (IS_DBGLVL_INFO)
+        Serial.printf("[SYS]: Considering network [%s]\n", ssid.c_str());
 
       if (!config.ssid.empty() && 0 == strcmp(config.ssid.c_str(), ssid.c_str())
         && (auth == WIFI_AUTH_OPEN || !config.password.empty()))
@@ -707,33 +726,43 @@ bool SystemState::wifiScan()
         this->cmdStnPort = config.serverPort;
         this->cmdStnIP = config.serverIP;
         this->fcSource = config.fcSource;
+        match = true;
         break;
       }
       else if (config.ssid.empty() && config.password.empty())
       {
-        if ((this->cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_ESU) && ssid == "ESUWIFI")
+        if ((config.cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_ESU) && ssid == "ESUWIFI")
         {
           // It's an ESU
+          this->cmdStnType = CMDSTN_ESU;
+          strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
           if (auth != WIFI_AUTH_OPEN)
             strncpy(this->password, "123456789", sizeof(this->password));
-
           this->cmdStnPort = (config.serverPort != 0)?config.serverPort:ESU_PORT_DEFAULT;
+          this->fcSource = config.fcSource;
+          match = true;
+          break;
         }
-        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_LNWI) && (auth == WIFI_AUTH_OPEN) && isDigitraxSSID(ssid.c_str()))
+        else if ((config.cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_LNWI) && (auth == WIFI_AUTH_OPEN) && isDigitraxSSID(ssid.c_str()))
         {
           this->cmdStnType = CMDSTN_LNWI;
           strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
           this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
           this->fcSource = config.fcSource;
+          match = true;
+          break;
         }
-        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_JMRI) && (auth == WIFI_AUTH_OPEN) && ssid == "MRCWi-Fi")
+        else if ((config.cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_JMRI) && (auth == WIFI_AUTH_OPEN) && ssid == "MRCWi-Fi")
         {
           this->cmdStnType = CMDSTN_JMRI;
           strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
           this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
           this->fcSource = config.fcSource;
+          match = true;
+          break;
+
         }
-        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_JMRI) && ssid == "RPi-JMRI")
+        else if ((config.cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_JMRI) && ssid == "RPi-JMRI")
         {
           // Auto-configuration for Steve Todd's JMRI RasPi Image
           this->cmdStnType = CMDSTN_JMRI;
@@ -743,9 +772,13 @@ bool SystemState::wifiScan()
 
           if (config.serverPort != 0)
             this->cmdStnPort = config.serverPort;
+
           this->fcSource = config.fcSource;
+          match = true;
+          break;
+
         }
-        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_DCCEX) && isDccExSSID(ssid.c_str()))
+        else if ((config.cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_DCCEX) && isDccExSSID(ssid.c_str()))
         {
           // Auto-configuration for DCC-EX Command Stations
           this->cmdStnType = CMDSTN_DCCEX;
@@ -755,18 +788,28 @@ bool SystemState::wifiScan()
 
           if (config.serverPort != 0)
             this->cmdStnPort = config.serverPort;
-          break;
+
           this->fcSource = config.fcSource;
+          match = true;
+          break;
         }
       }
     }
+
+    if (match)
+    {
+      this->activeConfigNum = configNum;
+      break;
+    }
+
   }
 
   WiFi.scanDelete();
 
   if (strlen(this->ssid))
   {
-    Serial.printf("Found network [%s] pass [%s] port [%d] type [%d]\n", this->ssid, this->password, this->cmdStnPort, this->cmdStnType);
+    if (IS_DBGLVL_INFO)
+      Serial.printf("[SYS]: Found network [%s]/[%s] Port [%d] matches config [%u], type[%d]\n", this->ssid, this->password, this->cmdStnPort, this->activeConfigNum, this->cmdStnType);
     return true;
   }
 

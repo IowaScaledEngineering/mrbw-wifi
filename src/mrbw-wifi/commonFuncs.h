@@ -38,9 +38,9 @@ char* trim(char* in);
 #define IS_DBGLVL_DEBUG  ((this->debug) >= DBGLVL_DEBUG)
 
 #define SYS_DBGLVL_ERR    (true)
-#define SYS_DBGLVL_WARN   ((systemState.debugLvlSystem) >= DBGLVL_WARN)
-#define SYS_DBGLVL_INFO   ((systemState.debugLvlSystem) >= DBGLVL_INFO)
-#define SYS_DBGLVL_DEBUG  ((systemState.debugLvlSystem) >= DBGLVL_DEBUG)
+#define SYS_DBGLVL_WARN   ((systemState.debug) >= DBGLVL_WARN)
+#define SYS_DBGLVL_INFO   ((systemState.debug) >= DBGLVL_INFO)
+#define SYS_DBGLVL_DEBUG  ((systemState.debug) >= DBGLVL_DEBUG)
 
 
 #define DEBU

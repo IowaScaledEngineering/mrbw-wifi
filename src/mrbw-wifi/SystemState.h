@@ -90,6 +90,7 @@ class SystemState
     bool isAutoNetwork;
     uint16_t cmdStnPort;
     uint8_t activeThrottles;
+    int8_t activeConfigNum;
     IPLineDisplay ipDisplayLine;
     IPAddress cmdStnIP;
     CommandStationType cmdStnType;
@@ -125,6 +126,6 @@ class SystemState
 
     uint8_t debugLvlCommandStation;
     uint8_t debugLvlMRBus;
-    uint8_t debugLvlSystem;
+    uint8_t debug;
     std::vector<ConfigInstance> configs;
 };
