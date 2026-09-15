@@ -1,0 +1,7 @@
+profiles:
+  release:
+    fqbn: "esp32:esp32:esp32s2"
+    platforms:
+      - platform: esp32:esp32 (3.3.11)
+    libraries:
+            

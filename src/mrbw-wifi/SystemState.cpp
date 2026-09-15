@@ -26,7 +26,6 @@ SystemState::SystemState()
 
   memset(this->ssid, 0, sizeof(this->ssid));
   memset(this->password, 0, sizeof(this->password));
-  memset(this->hostname, 0, sizeof(this->hostname));
 
   this->cmdStnPort = 0;
   this->cmdStnIP.fromString("0.0.0.0");
@@ -35,12 +34,25 @@ SystemState::SystemState()
   memset(this->macAddr, 0, sizeof(this->macAddr));
   // Get default MAC addr for station-class wifi
   esp_read_mac(this->macAddr, ESP_MAC_WIFI_STA);
-
-  snprintf(this->hostname, sizeof(this->hostname), "mrbw-wifi-%02X%02x", this->macAddr[4], this->macAddr[5]);
 }
 
 SystemState::~SystemState()
 {
+}
+
+void SystemState::updateWifiRSSI(int32_t rssi)
+{
+  this->rssi = rssi;
+}
+
+void SystemState::updateActiveThrottleCount(MRBusThrottle* throttles)
+{
+  uint32_t newActiveThrottles = 0;
+  for(uint32_t thrNum=0; thrNum < MAX_THROTTLES; thrNum++)
+    if (throttles[thrNum].isActive())
+      newActiveThrottles++;
+
+  this->activeThrottles = newActiveThrottles;
 }
 
 uint8_t SystemState::mrbusSrcAddrGet()
@@ -143,124 +155,229 @@ bool configKeyValueSplit(char* key, uint32_t keySz, char* value, uint32_t valueS
   return true;
 }
 
-bool SystemState::configRead()//fs::FS &fs)
+static void assignField(ConfigInstance &cfg, const std::string &key, const std::string &val)
 {
-  if (!this->isFSConnected)
+  if (key == "ssid")
   {
-    // Plug in a bunch of defaults, there's no functional filesystem
+    cfg.ssid = val;
+    cfg.isUsed = true;
+  }
+  else if (key == "password")
+  {
+    cfg.password = val;
+    cfg.isUsed = true;
+  }
+  else if (key == "mode")
+  {
+    cfg.cmdStnType = CMDSTN_NONE;
+    if ("lnwi" == val)
+      cfg.cmdStnType = CMDSTN_LNWI;
+    else if ("dccex" == val)
+      cfg.cmdStnType = CMDSTN_DCCEX;
+    else if ("withrottle" == val)
+      cfg.cmdStnType = CMDSTN_JMRI;
+    else if ("esu" == val)
+      cfg.cmdStnType = CMDSTN_ESU;
+
+    cfg.isUsed = true;
+  }
+  else if (key == "serverPort")
+  {
+    cfg.serverPort = val.empty() ? 0 : MAX(0, MIN(65535, atoi(val.c_str())));
+    cfg.isUsed = true;
+  }
+  else if (key == "serverIP")
+  {
+    cfg.serverIP.fromString((const char*)val.c_str());
+    cfg.isUsed = true;
+  }
+  else if (key == "fastClockSource")
+  {
+    cfg.fcSource = (val == "cmdstn") ? FC_SOURCE_CMDSTN : FC_SOURCE_OFF;
+    cfg.isUsed = true;
+  }
+  else if (key == "logLevel")
+  {
+    cfg.debugLvlMRBus = cfg.debugLvlCommandStation = cfg.debugLvlSystem = debugWordToLevel(val.c_str());    
+    cfg.isUsed = true;
+  }
+  else if (key == "logLevelCommandStation")
+  {
+    cfg.debugLvlCommandStation = debugWordToLevel(val.c_str());    
+    cfg.isUsed = true;
+  }
+  else if (key == "logLevelMRBus")
+  {
+    cfg.debugLvlMRBus = debugWordToLevel(val.c_str());    
+    cfg.isUsed = true;
+  }
+  else if (key == "logLevelSystem")
+  {
+    cfg.debugLvlSystem = debugWordToLevel(val.c_str());    
+    cfg.isUsed = true;
+  }
+  else if (key == "hostname")
+  {
+    cfg.hostname = val;
+  }
+}
+
+// In-place string trimmer
+static void trim(std::string &s)
+{
+  while (!s.empty() && isspace((unsigned char)s.front())) s.erase(s.begin());
+  while (!s.empty() && isspace((unsigned char)s.back()))  s.pop_back();
+}
+
+struct RawConfigLine {
+  std::string key;
+  int index; // 1-9, or 0 for global/all
+  std::string value;
+};
+
+// Parses a single line into key, index, and value.
+// Returns false if the line is empty, a comment, or malformed.
+static bool parseLine(const std::string &lineIn, RawConfigLine &out)
+{
+  std::string line = lineIn;
+  trim(line);
+
+  // Skip comments and blank lines
+  if (line.empty() || line[0] == '#')
     return false;
-  }
 
+  size_t eqPos = line.find('=');
+  if (eqPos == std::string::npos)
+    return false; // Malformed: missing '='
 
-//  File f = fs.open(CONFIG_FILE_PATH);
-  FILE *f = fopen("/config/config.txt", "r");
-  if (!f)
+  std::string rawKey = line.substr(0, eqPos);
+  std::string rawVal = line.substr(eqPos + 1);
+
+  trim(rawKey);
+  trim(rawVal); // Preserves empty value if nothing follows '='
+
+  out.value = rawVal;
+  out.index = 0; // Default: global
+
+  // Check for bracketed index: key[1]
+  size_t openBracket = rawKey.find('[');
+  if (openBracket != std::string::npos)
   {
-    Serial.printf("config.txt failed to open\n");
-    return false;  // At this point, we've tried our best to fix it
+    size_t closeBracket = rawKey.find(']', openBracket);
+    if (closeBracket != std::string::npos && closeBracket > openBracket + 1)
+    {
+      std::string idxStr = rawKey.substr(openBracket + 1, closeBracket - openBracket - 1);
+      int idx = atoi(idxStr.c_str());
+
+      if (idx >= 0 && idx <= MAX_CONFIG_INSTANCES)
+      {
+        out.index = idx;
+        out.key = rawKey.substr(0, openBracket);
+        trim(out.key);
+        return true;
+      }
+      else
+      {
+        // Out-of-bounds index (must be 1-9)
+        return false;
+      }
+    }
+    return false; // Malformed bracket syntax
   }
 
-//  while(f.available())
-  while (!feof(f))
-  {
-    char keyStr[128];
-    char valueStr[128];
-    char line[256];
-    memset(line, 0, sizeof(line));
-    
-    fgets(line, sizeof(line), f);
-    bool kvFound = configKeyValueSplit(keyStr, sizeof(keyStr), valueStr, sizeof(valueStr), line);
-    if (!kvFound)
-      continue;
-
-    // Okay, looks like we have a valid key/value pair, see if it's something we care about
-    if (0 == strcmp(keyStr, "mode"))
-    {
-      if (0 == strcmp(valueStr, "lnwi"))
-      {
-        this->cmdStnType = CMDSTN_LNWI;
-        this->cmdStnTypeSetByConfig = true;
-      }
-      else if (0 == strcmp(valueStr, "dccex"))
-      {
-        this->cmdStnType = CMDSTN_DCCEX;
-        this->cmdStnTypeSetByConfig = true;
-      }
-      else if (0 == strcmp(valueStr, "withrottle"))
-      {
-        this->cmdStnType = CMDSTN_JMRI;
-        this->cmdStnTypeSetByConfig = true;
-      }
-      else if (0 == strcmp(valueStr, "esu"))
-      {
-        this->cmdStnType = CMDSTN_ESU;
-        this->cmdStnTypeSetByConfig = true;
-      }
-    }
-    else if (0 == strcmp(keyStr, "ssid"))
-    {
-      strncpy(this->ssid, valueStr, sizeof(this->ssid));
-      this->isAutoNetwork = false;
-    }
-    else if (0 == strcmp(keyStr, "password"))
-    {
-      strncpy(this->password, valueStr, sizeof(this->password));
-    }
-    else if (0 == strcmp(keyStr, "serverPort"))
-    {
-      this->cmdStnPort = atoi(valueStr);
-    }
-    else if (0 == strcmp(keyStr, "serverIP"))
-    {
-      this->cmdStnSuggestedIP.fromString((const char*)valueStr);
-    }
-    else if (0 == strcmp(keyStr, "hostname"))
-    {
-      strncpy(this->hostname, valueStr, sizeof(this->hostname));
-    }
-    else if (0 == strcmp(keyStr, "fastClockSource"))
-    {
-      this->fcSource = FC_SOURCE_OFF;
-      if (0 == strcmp(valueStr, "cmdstn"))
-        this->fcSource = FC_SOURCE_CMDSTN;
-    }
-    else if (0 == strcmp(keyStr, "logLevel"))
-    {
-      this->debugLvlMRBus = this->debugLvlCommandStation = this->debugLvlSystem = debugWordToLevel(valueStr);
-    }
-    else if (0 == strcmp(keyStr, "logLevelCommandStation"))
-    {
-      this->debugLvlCommandStation = debugWordToLevel(valueStr);
-    }
-    else if (0 == strcmp(keyStr, "logLevelMRBus"))
-    {
-      this->debugLvlMRBus = debugWordToLevel(valueStr);
-    }
-    else if (0 == strcmp(keyStr, "logLevelSystem"))
-    {
-      this->debugLvlSystem = debugWordToLevel(valueStr);
-    }
-  }
-
-  fclose(f);
-//  f.close();
-
-  // Clean up some mess here
-  // If there's a password but no network, kill it
-  if (strlen(this->password) && 0 == strlen(this->ssid))
-    memset(this->password, 0, sizeof(this->password));
-
-  if (0 != strlen(this->ssid))
-  {
-    // FIXME: Evaluate if this ssid is something we understand and if so, set the cmdstn type
-  }
-
-
- 
+  out.key = rawKey;
   return true;
 }
 
 
+bool SystemState::configRead()
+{
+  if (!this->isFSConnected)
+    return false;
+
+  FILE *f = fopen("/config/config.txt", "r");
+  if (!f)
+  {
+    Serial.printf("[SYS]: config.txt failed to open\n");
+    return false;
+  }
+
+  std::vector<RawConfigLine> parsedLines;
+  int maxIndexSeen = 0;
+
+  char buf[256];
+  while (fgets(buf, sizeof(buf), f))
+  {
+    RawConfigLine entry;
+    if (parseLine(buf, entry))
+    {
+      if (entry.index > maxIndexSeen)
+        maxIndexSeen = entry.index;
+
+      parsedLines.push_back(entry);
+    }
+  }
+  fclose(f);
+
+  // If no indexed keys were found, instantiate at least index 1
+  int totalConfigs = (maxIndexSeen == 0) ? 1 : maxIndexSeen;
+
+  this->configs.clear();
+  this->configs.resize(totalConfigs);
+  for (int i = 0; i < totalConfigs; ++i)
+  {
+    configs[i].index = i + 1;
+  }
+
+  // Pass 1: Apply global keys (index == 0) to all instances
+  for (const auto &line : parsedLines)
+  {
+    if (line.index == 0)
+    {
+      for (auto &cfg : this->configs)
+      {
+        assignField(cfg, line.key, line.value);
+      }
+    }
+  }
+
+  // Pass 2: Apply specific index overrides (index 1-9 maps to vec[index - 1])
+  for (const auto &line : parsedLines)
+  {
+    if (line.index >= 1 && line.index <= totalConfigs)
+    {
+      assignField(this->configs[line.index - 1], line.key, line.value);
+    }
+  }
+
+  Serial.printf("[SYS]: %d configurations loaded\n", totalConfigs);
+
+  for (int i = 0; i < totalConfigs; ++i)
+  {
+    if (!this->configs[i].isUsed)
+      continue;
+
+    Serial.printf("[SYS]:  Config %d - SSID[%s] / [%s]\n", this->configs[i], this->configs[i].ssid.c_str(), this->configs[i].password.c_str());
+  }
+
+  // Set the global (non-per-config) configuration values
+  this->debugLvlMRBus = this->configs[0].debugLvlMRBus;
+  this->debugLvlSystem = this->configs[0].debugLvlSystem;
+  this->debugLvlCommandStation = this->configs[0].debugLvlCommandStation;
+  return true;
+}
+
+const char* SystemState::getHostname()
+{
+  if (this->configs[0].hostname.empty())
+  {
+    char hostnameStr[32];
+    snprintf(hostnameStr, sizeof(hostnameStr), "mrbw-wifi-%02x%02x", this->macAddr[4], this->macAddr[5]);
+    this->configs[0].hostname = std::string(hostnameStr);
+  }
+
+  return this->configs[0].hostname.c_str();
+}
 
 const char* SystemState::resetReasonStringGet()
 {
@@ -382,67 +499,79 @@ bool isDccExSSID(const char* ssid)
   return true;
 }
 
+bool mdnsQuery(const char* svcNameStr, IPAddress& ipAddr, uint16_t& port)
+{
+  Serial.printf("[SYS]: mDNS query for service [%s]\n", svcNameStr);
+
+  ipAddr = (uint32_t)0;
+  port = 0;
+
+  mdns_result_t * results = NULL;
+  mdns_result_t * r = NULL;
+
+  esp_err_t err = mdns_query_ptr(svcNameStr, "_tcp", 3000, 20,  &results);
+  int32_t numHosts = 0;
+  const char* hostname = "";
+
+  r = results;
+  while (ESP_OK == err && NULL != r && 0 == numHosts)
+  {
+    mdns_ip_addr_t * a = NULL;
+    a = r->addr;
+    while (a)
+    {
+      if (a->addr.type == IPADDR_TYPE_V4)
+      {
+        numHosts++;
+        hostname = r->hostname;
+        ipAddr = (uint32_t)(a->addr.u_addr.ip4.addr);
+        port = r->port;
+        mdns_query_results_free(results);
+        Serial.printf("[SYS]: mDNS found host [%s] address [%s:%d]\n", hostname, ipAddr.toString().c_str(), port);
+        return true;
+      }
+      a = a->next;
+    }
+    r = r->next;
+  }
+
+  mdns_query_results_free(results);
+  Serial.printf("[SYS]: mDNS found NO hosts for [%s]\n", svcNameStr);
+  return false;
+}
+
 bool SystemState::cmdStnIPSetup()
 {
-  if (0 != (uint32_t)this->cmdStnSuggestedIP)
+  if (0 != (uint32_t)this->cmdStnIP && 0 != this->cmdStnPort)
   {
-    this->cmdStnIP = this->cmdStnSuggestedIP;
     return true;
   }
 
-  const char* svcNameStr = "";
+  IPAddress ipAddr = (uint32_t)0;
+  uint16_t port = 0;
 
-  if (CMDSTN_LNWI == this->cmdStnType || CMDSTN_JMRI == this->cmdStnType || CMDSTN_DCCEX == this->cmdStnType)
+  // Try WiThrottle first for things we know are WiThrottle and for unknowns
+  if (CMDSTN_LNWI == this->cmdStnType || CMDSTN_JMRI == this->cmdStnType || CMDSTN_DCCEX == this->cmdStnType || CMDSTN_NONE == this->cmdStnType)
   {
-    svcNameStr = "_withrottle";
-  } else if (CMDSTN_ESU == this->cmdStnType) { 
-    svcNameStr = "_esu-mrtp";
-  }
-
-  // Do we have a protocol to look for?  Then go searching
-  if (strlen(svcNameStr))
-  {
-    Serial.printf("[SYS]: MDNS starting for service [%s]\n", svcNameStr);
-
-    mdns_result_t * results = NULL;
-    mdns_result_t * r = NULL;
-
-    esp_err_t err = mdns_query_ptr(svcNameStr, "_tcp", 3000, 20,  &results);
-    int32_t numHosts = 0;
-    const char* hostname = "";
-
-    r = results;
-    while (ESP_OK == err && NULL != r && 0 == numHosts)
+    if (mdnsQuery(WITHROTTLE_MDNS_NAME, ipAddr, port))
     {
-      mdns_ip_addr_t * a = NULL;
-      Serial.printf("MDNS [%s]\n", r->hostname);
-      a = r->addr;
-      while (a)
-      {
-        if (a->addr.type == IPADDR_TYPE_V4)
-        {
-          numHosts++;
-          hostname = r->hostname;
-          this->cmdStnIP = (uint32_t)(a->addr.u_addr.ip4.addr);
-          this->cmdStnPort = r->port;
-          break;
-        }
-        a = a->next;
-      }
-      r = r->next;
-    }
-
-    mdns_query_results_free(results);
-
-    if (numHosts > 0)
-    {
-      // Just pick the first one for now.  Maybe there's some smarterish later?
-      Serial.printf("[SYS]: MDNS found %ld hosts\n", numHosts);
-      Serial.printf("[SYS]: Hostname: [%s] IP: [%s:%d]\n", hostname, this->cmdStnIP.toString().c_str(), this->cmdStnPort);
+      this->cmdStnIP = ipAddr;
+      this->cmdStnPort = port;
+      if (CMDSTN_NONE == this->cmdStnType)
+        this->cmdStnType = CMDSTN_JMRI;
       return true;
-    } else {
-      Serial.printf("[SYS]: MDNS found NO hosts for [%s]\n", svcNameStr);
-
+    }
+  }
+  
+  // Try ESU for things we know are ESU, or if we didn't find a configuration match above on an unknown
+  if (CMDSTN_ESU == this->cmdStnType || CMDSTN_NONE == this->cmdStnType)
+  { 
+    if (mdnsQuery(ESU_MDNS_NAME, ipAddr, port))
+    {
+      this->cmdStnIP = ipAddr;
+      this->cmdStnPort = port;
+      this->cmdStnType = CMDSTN_ESU;
+      return true;
     }
   }
 
@@ -461,19 +590,17 @@ bool SystemState::cmdStnIPSetup()
     if (0 == this->cmdStnPort)
     {
       if (CMDSTN_LNWI == this->cmdStnType)
-        this->cmdStnPort = 12090;
+        this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
       else if (CMDSTN_ESU == this->cmdStnType)
-        this->cmdStnPort = 15471;
+        this->cmdStnPort = ESU_PORT_DEFAULT;
       else if (CMDSTN_DCCEX == this->cmdStnType)
-        this->cmdStnPort = 2560;
+        this->cmdStnPort = DCCEX_PORT_DEFAULT;
     }
 
     Serial.printf("[SYS]: Trying backup plan of command station [%s:%d]\n", this->cmdStnIP.toString().c_str(), this->cmdStnPort);
 
     return true;
   }
-
-
   return false;
 }
 
@@ -496,25 +623,44 @@ bool SystemState::isConflictingBasePresent()
 }
 
 
-bool SystemState::wifiScan()
+bool SystemState::wifiScanStart()
 {
-  if (!this->isAutoNetwork)
-    return true; // Don't scan if we're not in automatic mode
-
+  Serial.printf("[SYS]: Beginning Wifi Scan\n");
   WiFi.disconnect();
   WiFi.mode(WIFI_STA);
+  WiFi.setMinSecurity(WIFI_AUTH_OPEN);
   WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+  int16_t scanResult = WiFi.scanNetworks(true);
+  if (scanResult == WIFI_SCAN_FAILED)
+  {
+    Serial.printf("[SYS]: Could not start Wifi Scan\n");
+    return false;
+  }
 
-  Serial.printf("Beginning Wifi Scan\n");
-  int totalNetworks = WiFi.scanNetworks();
-  Serial.printf("Scan done, %d networks found\n", totalNetworks);
+  return true;
+}
 
+bool SystemState::isWifiScanComplete()
+{
+  int16_t scanResult = WiFi.scanComplete();
+  if (scanResult >= 0 || scanResult == WIFI_SCAN_FAILED)
+    return true;
+  return false;
+}
 
-  // Initialize wifi fields
-  memset(this->ssid, 0, sizeof(this->ssid));
-  memset(this->password, 0, sizeof(this->password));
-  this->cmdStnPort = 0;
+bool SystemState::wifiScan()
+{
+  int totalNetworks = WiFi.scanComplete();
+  if (totalNetworks == WIFI_SCAN_FAILED)
+  {
+    Serial.printf("[SYS]: WiFi scan failed\n");
+    WiFi.scanDelete();
+    return false;
+  }
 
+  if (totalNetworks >= 0)
+    Serial.printf("[SYS]: WiFi scan done, %d networks found\n", totalNetworks);
+  
   for (int n=0; n<totalNetworks; n++)
   {
     String ssid;
@@ -526,8 +672,14 @@ bool SystemState::wifiScan()
     WiFi.getNetworkInfo(n, ssid, auth, rssi, bssid, channel);
     // Basic rule here is we should have the networks sorted by signal strength
     // First one that matches our command station type (if set) wins
-    Serial.printf("[%-32.32s] Ch: %2ld RSSI: %ld Auth: %s\n", ssid.c_str(), channel, rssi, wifiSecurityTypeStringGet((wifi_auth_mode_t)auth));
+    Serial.printf("  [%-32.32s] Ch: %2ld RSSI: %ld Auth: %s\n", ssid.c_str(), channel, rssi, wifiSecurityTypeStringGet((wifi_auth_mode_t)auth));
   }
+
+  // Initialize wifi fields
+  memset(this->ssid, 0, sizeof(this->ssid));
+  memset(this->password, 0, sizeof(this->password));
+  this->cmdStnPort = 0;
+  this->cmdStnIP.fromString("0.0.0.0");
 
   for (int n=0; n<totalNetworks; n++)
   {
@@ -538,58 +690,75 @@ bool SystemState::wifiScan()
     int32_t channel;
 
     WiFi.getNetworkInfo(n, ssid, auth, rssi, bssid, channel);
-
     // Let's look through these networks and see if we find anything meeting our needs
-    if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_ESU) && ssid == "ESUWIFI")
-    {
-      // Auto-configuration for ESU CabControl systems
-      this->cmdStnType = CMDSTN_ESU;
-      strncpy(this->ssid, "ESUWIFI", sizeof(this->ssid));
-      if (auth != WIFI_AUTH_OPEN)
-        strncpy(this->password, "123456789", sizeof(this->password));
-      this->cmdStnPort = 15471;
-      break;
-    }
-    else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_LNWI) && (auth == WIFI_AUTH_OPEN) && isDigitraxSSID(ssid.c_str()))
-    {
-      // Auto-configuration for Digitrax LNWIs
-      this->cmdStnType = CMDSTN_LNWI;
-      strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
-      this->cmdStnPort = 12090;
-      break;
-    }
-    else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_JMRI) && (auth == WIFI_AUTH_OPEN) && ssid == "MRCWi-Fi")
-    {
-      // Auto-configuration for MRC WiFi Modules
-      this->cmdStnType = CMDSTN_JMRI;
-      strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
-      this->cmdStnPort = 12090;
-      break;
-    }
-    else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_JMRI) && ssid == "RPi-JMRI")
-    {
-      // Auto-configuration for Steve Todd's JMRI RasPi Image
-      this->cmdStnType = CMDSTN_JMRI;
-      strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
-      if (auth != WIFI_AUTH_OPEN)
-        strncpy(this->password, "rpI-jmri", sizeof(this->password));
 
-      if (0 == this->cmdStnPort)
-        this->cmdStnPort = 12090;
-
-      break;
-    }
-    else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_DCCEX) && isDccExSSID(ssid.c_str()))
+    for (const auto& config : this->configs) 
     {
-      // Auto-configuration for DCC-EX Command Stations
-      this->cmdStnType = CMDSTN_DCCEX;
-      strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
-      if (auth != WIFI_AUTH_OPEN)
-        snprintf(this->password, sizeof(this->password), "PASS_%s", ssid.c_str()+6);
+      if (!config.isUsed)
+        continue;
 
-      if (0 == this->cmdStnPort)
-        this->cmdStnPort = 2560;
-      break;
+      if (!config.ssid.empty() && 0 == strcmp(config.ssid.c_str(), ssid.c_str())
+        && (auth == WIFI_AUTH_OPEN || !config.password.empty()))
+      {
+        // This is a good candidate
+        strncpy(this->ssid, config.ssid.c_str(), sizeof(this->ssid));
+        strncpy(this->password, config.password.c_str(), sizeof(this->password));
+        this->cmdStnType = config.cmdStnType;
+        this->cmdStnPort = config.serverPort;
+        this->cmdStnIP = config.serverIP;
+        this->fcSource = config.fcSource;
+        break;
+      }
+      else if (config.ssid.empty() && config.password.empty())
+      {
+        if ((this->cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_ESU) && ssid == "ESUWIFI")
+        {
+          // It's an ESU
+          if (auth != WIFI_AUTH_OPEN)
+            strncpy(this->password, "123456789", sizeof(this->password));
+
+          this->cmdStnPort = (config.serverPort != 0)?config.serverPort:ESU_PORT_DEFAULT;
+        }
+        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_LNWI) && (auth == WIFI_AUTH_OPEN) && isDigitraxSSID(ssid.c_str()))
+        {
+          this->cmdStnType = CMDSTN_LNWI;
+          strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
+          this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
+          this->fcSource = config.fcSource;
+        }
+        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_JMRI) && (auth == WIFI_AUTH_OPEN) && ssid == "MRCWi-Fi")
+        {
+          this->cmdStnType = CMDSTN_JMRI;
+          strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
+          this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
+          this->fcSource = config.fcSource;
+        }
+        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_JMRI) && ssid == "RPi-JMRI")
+        {
+          // Auto-configuration for Steve Todd's JMRI RasPi Image
+          this->cmdStnType = CMDSTN_JMRI;
+          strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
+          if (auth != WIFI_AUTH_OPEN)
+            strncpy(this->password, "rpI-jmri", sizeof(this->password));
+
+          if (config.serverPort != 0)
+            this->cmdStnPort = config.serverPort;
+          this->fcSource = config.fcSource;
+        }
+        else if ((this->cmdStnType == CMDSTN_NONE || this->cmdStnType == CMDSTN_DCCEX) && isDccExSSID(ssid.c_str()))
+        {
+          // Auto-configuration for DCC-EX Command Stations
+          this->cmdStnType = CMDSTN_DCCEX;
+          strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
+          if (auth != WIFI_AUTH_OPEN)
+            snprintf(this->password, sizeof(this->password), "PASS_%s", ssid.c_str()+6);
+
+          if (config.serverPort != 0)
+            this->cmdStnPort = config.serverPort;
+          break;
+          this->fcSource = config.fcSource;
+        }
+      }
     }
   }
 

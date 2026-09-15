@@ -60,6 +60,9 @@ bool MRBus::begin(uint8_t debugLvl)
 
 void MRBus::transmitPackets()
 {
+  constexpr size_t xBeeTxBufferSz = 14 + MRBUS_PKT_DATA_LEN;
+  constexpr size_t xBeeTxBufferEscapedSz = 1 + (2 * (13 + MRBUS_PKT_DATA_LEN));
+
   size_t bytesAvailable;
   uart_get_tx_buffer_free_size(UART_NUM_1, &bytesAvailable);
   if (this->txPktQueue->isEmpty() || bytesAvailable < 64)
@@ -68,9 +71,15 @@ void MRBus::transmitPackets()
   MRBusPacket pkt;
   if (!this->txPktQueue->pop(pkt))
     return;
-  
-  uint8_t* xBeeTxBuffer = (uint8_t*)calloc(64, sizeof(uint8_t));
-  uint8_t* xBeeTxBuffer_escaped = (uint8_t*)calloc(64, sizeof(uint8_t));;
+
+  if (pkt.len > MRBUS_PKT_DATA_LEN)
+  {
+    Serial.printf("[MRBus]: Dropping TX packet with invalid length %u\n", pkt.len);
+    return;
+  }
+
+  uint8_t xBeeTxBuffer[xBeeTxBufferSz];
+  uint8_t xBeeTxBufferEscaped[xBeeTxBufferEscapedSz];
 
 /*
 #     txBuffer.append(0x7E)       # 0 - Start 
@@ -118,8 +127,8 @@ TX: [7e 00 18 01 00 ff ff 00 ff d0 7d 33 1b cf 76 80 ab cd ef 01 00 4e 4f 20 57 
 
   xBeeTxBuffer[13 + pkt.len] = 0xFF - xBeeTxBuffer[13 + pkt.len];
 
-  uint8_t xbtx_idx = 0; // Number of bytes in escaped buffer
-  xBeeTxBuffer_escaped[xbtx_idx++] = xBeeTxBuffer[0];
+  size_t xbtx_idx = 0; // Number of bytes in escaped buffer
+  xBeeTxBufferEscaped[xbtx_idx++] = xBeeTxBuffer[0];
   for(int i=1; i<13 + 1 + pkt.len; i++)
   {
     switch(xBeeTxBuffer[i])
@@ -128,18 +137,15 @@ TX: [7e 00 18 01 00 ff ff 00 ff d0 7d 33 1b cf 76 80 ab cd ef 01 00 4e 4f 20 57 
       case 0x7D:
       case 0x11:
       case 0x13:
-        xBeeTxBuffer_escaped[xbtx_idx++] = 0x7D;
-        xBeeTxBuffer_escaped[xbtx_idx++] = xBeeTxBuffer[i] ^ 0x20;
+        xBeeTxBufferEscaped[xbtx_idx++] = 0x7D;
+        xBeeTxBufferEscaped[xbtx_idx++] = xBeeTxBuffer[i] ^ 0x20;
         break;
       default:
-        xBeeTxBuffer_escaped[xbtx_idx++] = xBeeTxBuffer[i];
+        xBeeTxBufferEscaped[xbtx_idx++] = xBeeTxBuffer[i];
         break;
     }
   }
-  uart_write_bytes(UART_NUM_1, xBeeTxBuffer_escaped, xbtx_idx);
-
-  free(xBeeTxBuffer);
-  free(xBeeTxBuffer_escaped);
+  uart_write_bytes(UART_NUM_1, xBeeTxBufferEscaped, xbtx_idx);
 }
 
 bool MRBus::processSerial()
@@ -160,7 +166,7 @@ bool MRBus::processSerial()
   if (0 == this->rxBufferUsed)
     return false;
 
-  //Serial.printf("Read %d bytes\n", this->rxBufferUsed);
+  //Serial.printf("[MRBUS]: Read %d bytes\n", this->rxBufferUsed);
 
   // Read until we find a start of frame marker
   uint8_t* startPtr = this->rxBuffer;
@@ -206,9 +212,31 @@ bool MRBus::processSerial()
             b ^= 0x20;
             rxEscapeNext = false;
           }
+
+          if (xBeePktLen >= sizeof(xBeePkt))
+          {
+            // Reject an oversized frame and resynchronize on the next start marker.
+            rxInPacket = false;
+            rxEscapeNext = false;
+            xBeePktLen = 0;
+            startOfUnprocessedData = startPtr;
+            break;
+          }
+
           xBeePkt[xBeePktLen++] = b;
           if (3 == xBeePktLen)
+          {
             rxExpectedPktLen = (((uint32_t)xBeePkt[1])<<8) + xBeePkt[2] + 4;
+            if (rxExpectedPktLen > sizeof(xBeePkt))
+            {
+              // The length field cannot be represented by the local frame buffer.
+              rxInPacket = false;
+              rxEscapeNext = false;
+              xBeePktLen = 0;
+              startOfUnprocessedData = startPtr;
+              break;
+            }
+          }
 
           // See if we've completed packet processing
           if (xBeePktLen == rxExpectedPktLen)
@@ -282,12 +310,16 @@ MRBusPacket& MRBusPacket::operator=(const MRBusPacket& c)
 
 bool MRBusPacket::fromBuffer(uint8_t* buffer, uint8_t bufferSz)
 {
-  if (bufferSz < 6)
+  if (buffer == nullptr || bufferSz < 5)
+    return false;
+
+  uint8_t packetLen = buffer[MRBUS_PKT_LEN];
+  if (packetLen < 5 || packetLen > (5 + MRBUS_PKT_DATA_LEN) || packetLen > bufferSz)
     return false;
 
   this->src = buffer[MRBUS_PKT_SRC];
   this->dest = buffer[MRBUS_PKT_DEST];
-  this->len = buffer[MRBUS_PKT_LEN] > (5+MRBUS_PKT_DATA_LEN) ? (MRBUS_PKT_DATA_LEN):buffer[MRBUS_PKT_LEN];
+  this->len = packetLen;
   this->crc = (((uint16_t)buffer[MRBUS_PKT_CRC_H])<<8) | buffer[MRBUS_PKT_CRC_L];
 
   memset(this->data, 0, MRBUS_PKT_DATA_LEN);

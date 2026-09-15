@@ -11,6 +11,7 @@
 #define MIN(a,b)  ((a>b)?(b):(a))
 
 static const uint32_t DISPLAY_BUFFER_SIZE  = (SSD1306_WIDTH * SSD1306_HEIGHT / 8);
+static const uint8_t DISPLAY_I2C_DATA_CHUNK = 16;
 
 #define SSD1306_BLACK 0   ///< Draw 'off' pixels
 #define SSD1306_WHITE 1   ///< Draw 'on' pixels
@@ -145,7 +146,7 @@ bool I2CDisplay::refresh(bool force)
       {
         this->i2c->beginTransmission(0x3C); //Start communication with slave
         this->i2c->write(0x40); //Data stream
-        for(uint8_t w=0; w<16; w++)
+        for(uint8_t w=0; w<DISPLAY_I2C_DATA_CHUNK; w++)
         {
           this->i2c->write(this->displayBuffer[q]); //Transmit data to be displayed
           q++;
@@ -199,7 +200,7 @@ bool I2CDisplay::clrscr(bool refresh)
     {
         this->i2c->beginTransmission(0x3C); //Start communication with slave
         this->i2c->write(0x40); //Data stream
-        for(uint8_t w=0; w<16; w++)
+        for(uint8_t w=0; w<DISPLAY_I2C_DATA_CHUNK; w++)
         {
             this->i2c->write(this->displayBuffer[q]); //Transmit data to be displayed
             q++;

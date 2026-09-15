@@ -1,8 +1,11 @@
 #pragma once
 
 #include <stdint.h>
+
+void ws2812Update(uint32_t rgb);
 void ws2812Set(uint32_t rgb);
 void ws2812Init();
+#define WS2812_OFF     0x000000
 #define WS2812_GREEN   0x000f00
 #define WS2812_YELLOW  0x0f0f00
 #define WS2812_RED     0x0f0000 
