@@ -17,7 +17,7 @@ const char* defaultConfigFileContents =
 "ssid[1] = \n" \
 "password[1] = \n" \
 "\n" \
-"# Mode is the command station type - can be lnwi, withrottle, dccex, or esu \n" \
+"# Mode is the command station type - can be lnwi, withrottle, dccex, wfd30, or esu \n" \
 "mode[1] = \n" \
 "\n" \
 "# If you want to manually configure your server address, do so here \n" \
@@ -27,8 +27,9 @@ const char* defaultConfigFileContents =
 "# If you want to use your JMRI or DCC-EX as your fast clock source, set this to cmdstn, otherwise leave at none \n" \
 "fastClockSource[1] = none\n" \
 "\n" \
+"# ** GLOBAL OPTIONS **" \
+"# Control here is global, not configuration specific, and do not have an index number\n" \
 "# Controls the verbosity of debug logging on the USB serial console - options are error, warn, info and debug \n" \
-"# Control here is global, not configuration specific\n" \
 "logLevel = info\n" \
 "\n"
 ;

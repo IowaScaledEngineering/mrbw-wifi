@@ -179,6 +179,8 @@ static void assignField(ConfigInstance &cfg, const std::string &key, const std::
       cfg.cmdStnType = CMDSTN_JMRI;
     else if ("esu" == val)
       cfg.cmdStnType = CMDSTN_ESU;
+    else if ("wfd30" == val)
+      cfg.cmdStnType = CMDSTN_WFD30;
 
     cfg.isUsed = true;
   }
@@ -451,6 +453,30 @@ bool isHexChar(const char c)
   return false;
 }
 
+bool isWifitraxSSID(const char* ssid)
+{
+  const char* ptr = ssid;
+  // Wifitrax WFD30 adapters are in the form of:
+  // 000000000011111111112222
+  // 012345678901234567890123
+  // wftrx_WFD30_1_XXXXXXXX_7
+
+  //self.lnwiSSIDMatch = re.compile(r'Dtx\d+-[A-Za-z0-9 ]+_[0-9A-F][0-9A-F][0-9A-F][0-9A-F]-[0-7]')
+  if (24 != strlen(ssid) || 0 != strncmp(ptr, "wftrx_WFD30_1_", 14))
+    return false;
+
+  for (uint8_t i=14; i<22; i++)
+  {
+    if (!isdigit(ssid[i]))
+      return false;
+  }
+
+  if ('_' != ssid[22] || '7' != ssid[23])
+    return false;
+
+  return true;
+}
+
 bool isDigitraxSSID(const char* ssid)
 {
   const char* ptr = ssid;
@@ -552,7 +578,7 @@ bool SystemState::cmdStnIPSetup()
   uint16_t port = 0;
 
   // Try WiThrottle first for things we know are WiThrottle and for unknowns
-  if (CMDSTN_LNWI == this->cmdStnType || CMDSTN_JMRI == this->cmdStnType || CMDSTN_DCCEX == this->cmdStnType || CMDSTN_NONE == this->cmdStnType)
+  if (CMDSTN_WFD30 == this->cmdStnType || CMDSTN_LNWI == this->cmdStnType || CMDSTN_JMRI == this->cmdStnType || CMDSTN_DCCEX == this->cmdStnType || CMDSTN_NONE == this->cmdStnType)
   {
     if (mdnsQuery(WITHROTTLE_MDNS_NAME, ipAddr, port))
     {
@@ -578,7 +604,7 @@ bool SystemState::cmdStnIPSetup()
 
   // As a last resort, try hard-coded rules about where certain devices (LNWIs, ESUs)
   //  live based on just how they're built.
-  if (CMDSTN_LNWI == this->cmdStnType
+  if (CMDSTN_LNWI == this->cmdStnType || (CMDSTN_WFD30 == this->cmdStnType && isWifitraxSSID(this->ssid))
     || (CMDSTN_DCCEX == this->cmdStnType && isDccExSSID(this->ssid))
     || (CMDSTN_ESU == this->cmdStnType && 0 == strcmp(this->ssid, "ESUWIFI")))
   {
@@ -590,7 +616,7 @@ bool SystemState::cmdStnIPSetup()
     this->cmdStnIP = (((uint32_t)this->localIP) & 0x00FFFFFF) | 0x01000000;
     if (0 == this->cmdStnPort)
     {
-      if (CMDSTN_LNWI == this->cmdStnType)
+      if (CMDSTN_LNWI == this->cmdStnType || CMDSTN_WFD30 == this->cmdStnType)
         this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
       else if (CMDSTN_ESU == this->cmdStnType)
         this->cmdStnPort = ESU_PORT_DEFAULT;
@@ -746,6 +772,15 @@ bool SystemState::wifiScan()
         else if ((config.cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_LNWI) && (auth == WIFI_AUTH_OPEN) && isDigitraxSSID(ssid.c_str()))
         {
           this->cmdStnType = CMDSTN_LNWI;
+          strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
+          this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
+          this->fcSource = config.fcSource;
+          match = true;
+          break;
+        }
+        else if ((config.cmdStnType == CMDSTN_NONE || config.cmdStnType == CMDSTN_WFD30) && (auth == WIFI_AUTH_OPEN) && isWifitraxSSID(ssid.c_str()))
+        {
+          this->cmdStnType = CMDSTN_WFD30;
           strncpy(this->ssid, ssid.c_str(), sizeof(this->ssid));
           this->cmdStnPort = WITHROTTLE_PORT_DEFAULT;
           this->fcSource = config.fcSource;

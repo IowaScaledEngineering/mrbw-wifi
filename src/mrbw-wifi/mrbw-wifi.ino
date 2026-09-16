@@ -395,10 +395,12 @@ void loop()
               case CMDSTN_JMRI:
               case CMDSTN_DCCEX:
               case CMDSTN_LNWI:
+              case CMDSTN_WFD30:
                 // These are all variants of the WiThrottle protocol, but all implement it just a little differently
                 // The main difference right now is that DCC-EX and LNWI do not support the "force function" ('f') command
-                //  which is bloody annoying
-                if (CMDSTN_LNWI == systemState.cmdStnType)
+                //  which is bloody annoying.  Neither does the WFD30, but otherwise it's just like the LNWI, so I'm making them
+                //  the same quirk.
+                if (CMDSTN_LNWI == systemState.cmdStnType || CMDSTN_WFD30 == systemState.cmdStnType)
                   quirkFlags |= WITHROTTLE_QUIRK_LNWI;
                 else if (CMDSTN_DCCEX == systemState.cmdStnType)
                   quirkFlags |= WITHROTTLE_QUIRK_DCCEX;

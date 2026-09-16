@@ -35,6 +35,7 @@ typedef enum
   CMDSTN_LNWI        = 1,
   CMDSTN_JMRI        = 2,
   CMDSTN_DCCEX       = 3,
+  CMDSTN_WFD30       = 4,
   CMDSTN_ESU         = 100
 } CommandStationType;
 

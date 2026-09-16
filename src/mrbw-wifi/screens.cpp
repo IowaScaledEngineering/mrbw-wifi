@@ -63,7 +63,7 @@ void drawStatusScreen(SystemState& state, I2CDisplay& display)
   }
 
 //  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d %c:%02d", state.isAutoNetwork?'A':'C', cmdStnStr, spinnerChars[spinnerNum], state.activeThrottles, state.isConflictingBasePresent()?'*':'B', state.baseAddress);
-  snprintf(lineBuf, sizeof(lineBuf), "%1.1d:%4.4s    %c T:%02d %c:%02d", state.activeConfigNum, cmdStnStr, spinnerChars[spinnerNum], state.activeThrottles, state.isConflictingBasePresent()?'*':'B', state.baseAddress);
+  snprintf(lineBuf, sizeof(lineBuf), "%c:%4.4s    %c T:%02d %c:%02d", (state.activeConfigNum>=1)?(state.activeConfigNum - '0'):'?', cmdStnStr, spinnerChars[spinnerNum], state.activeThrottles, state.isConflictingBasePresent()?'*':'B', state.baseAddress);
   display.putstr(lineBuf, 0, 0);
 
   if (0 == strlen(state.ssid))
