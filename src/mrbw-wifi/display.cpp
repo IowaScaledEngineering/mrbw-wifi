@@ -153,6 +153,7 @@ bool I2CDisplay::refresh(bool force)
         }
         q--;
         this->i2c->endTransmission(); //End communication with slave
+        yield();
       }
       
     }
@@ -207,6 +208,7 @@ bool I2CDisplay::clrscr(bool refresh)
         }
         q--;
         this->i2c->endTransmission(); //End communication with slave
+        yield();
     }
     this->unsentChanges = false;
   }
